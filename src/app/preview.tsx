@@ -18,7 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { VideoView, useVideoPlayer } from "expo-video";
-import { useGetConversationsQuery, useSendPhotoMessageMutation, useSaveToJournalMutation, useSendSnapMessageEnhancedMutation } from "../store/slices/api-slice";
+import { useGetConversationsQuery, useSendPhotoMessageMutation, useSaveToJournalMutation, useSendSnapMessageEnhancedMutation, useCreateStoryMutation } from "../store/slices/api-slice";
 import type { ConversationWithDetails } from "../types/database";
 
 type MediaType = 'photo' | 'video';
@@ -34,6 +34,7 @@ export default function PreviewScreen() {
   const [showSendModal, setShowSendModal] = useState(false);
   const [sending, setSending] = useState(false);
   const [savingToJournal, setSavingToJournal] = useState(false);
+  const [postingToStory, setPostingToStory] = useState(false);
   const [sendMode, setSendMode] = useState<'regular' | 'snap'>('regular');
   const [snapSettings, setSnapSettings] = useState({
     viewingDuration: 5,
@@ -46,6 +47,7 @@ export default function PreviewScreen() {
   const [sendPhotoMessage] = useSendPhotoMessageMutation();
   const [saveToJournal] = useSaveToJournalMutation();
   const [sendSnapMessage] = useSendSnapMessageEnhancedMutation();
+  const [createStory] = useCreateStoryMutation();
 
   // Determine if this is a video
   const isVideo = mediaType === 'video';
@@ -179,6 +181,38 @@ export default function PreviewScreen() {
   };
 
   /**
+   * Handle posting to story
+   */
+  const handlePostToStory = async () => {
+    if (!mediaUri) return;
+
+    setPostingToStory(true);
+    try {
+      await createStory({
+        imageUri: mediaUri,
+        content_type: mediaType as 'photo' | 'video',
+        viewing_duration: 5, // Default 5 seconds
+        options: { quality: 0.8 }
+      }).unwrap();
+
+      Alert.alert(
+        "Posted to Story!",
+        `Your ${isVideo ? 'video' : 'photo'} has been posted to your story. It will disappear after 24 hours.`,
+        [{ text: "OK", onPress: () => router.back() }]
+      );
+    } catch (error) {
+      console.error(`Failed to post ${mediaType} to story:`, error);
+      Alert.alert(
+        "Post Failed",
+        `Failed to post ${isVideo ? 'video' : 'photo'} to story. Please try again.`,
+        [{ text: "OK" }]
+      );
+    } finally {
+      setPostingToStory(false);
+    }
+  };
+
+  /**
    * Handle back navigation
    */
   const handleBack = () => {
@@ -250,15 +284,15 @@ export default function PreviewScreen() {
 
       {/* Bottom action buttons */}
       <View className="absolute bottom-0 left-0 right-0 pb-8">
-        <View className="flex-row items-center justify-center space-x-4 px-4">
+        <View className="flex-row items-center justify-center space-x-3 px-4">
           {/* Discard button */}
           <TouchableOpacity
             className="flex-1 items-center justify-center rounded-full bg-black/50 py-4"
             onPress={handleDiscard}
           >
             <View className="items-center">
-              <Ionicons name="trash-outline" size={24} color="white" />
-              <Text className="mt-1 text-sm font-medium text-white">
+              <Ionicons name="trash-outline" size={20} color="white" />
+              <Text className="mt-1 text-xs font-medium text-white">
                 Discard
               </Text>
             </View>
@@ -274,10 +308,28 @@ export default function PreviewScreen() {
               {savingToJournal ? (
                 <ActivityIndicator size="small" color="white" />
               ) : (
-                <Ionicons name="bookmark-outline" size={24} color="white" />
+                <Ionicons name="bookmark-outline" size={20} color="white" />
               )}
-              <Text className="mt-1 text-sm font-medium text-white">
+              <Text className="mt-1 text-xs font-medium text-white">
                 {savingToJournal ? "Saving..." : "Journal"}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Story button */}
+          <TouchableOpacity
+            className="flex-1 items-center justify-center rounded-full bg-purple-600 py-4"
+            onPress={handlePostToStory}
+            disabled={postingToStory}
+          >
+            <View className="items-center">
+              {postingToStory ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Ionicons name="time-outline" size={20} color="white" />
+              )}
+              <Text className="mt-1 text-xs font-medium text-white">
+                {postingToStory ? "Posting..." : "Story"}
               </Text>
             </View>
           </TouchableOpacity>
@@ -292,9 +344,9 @@ export default function PreviewScreen() {
               {sending ? (
                 <ActivityIndicator size="small" color="white" />
               ) : (
-                <Ionicons name="send" size={24} color="white" />
+                <Ionicons name="send" size={20} color="white" />
               )}
-              <Text className="mt-1 text-sm font-medium text-white">
+              <Text className="mt-1 text-xs font-medium text-white">
                 {sending ? "Sending..." : "Send"}
               </Text>
             </View>

@@ -277,4 +277,45 @@ export interface SpotlightFeedItem extends SpotlightPost {
   display_name: string;
   avatar_url: string | null;
   user_has_liked: boolean;
-} 
+}
+
+export interface Story {
+  id: string;
+  user_id: string;
+  
+  // Content metadata
+  image_url: string;
+  thumbnail_url?: string | null;
+  caption?: string | null;
+  content_type: 'photo' | 'video';
+  
+  // Technical metadata
+  file_size?: number | null;
+  dimensions?: { width: number; height: number } | null;
+  
+  // Stories-specific settings
+  viewing_duration: number; // seconds, default 5
+  background_color?: string | null; // hex color for text-only stories
+  
+  // Expiration (24 hours)
+  expires_at: string;
+  
+  // View tracking
+  view_count: number;
+  viewed_by: Record<string, { timestamp: string; first_viewed_at: string }>; // user_id -> view data
+  
+  // Timestamps
+  created_at: string;
+  updated_at: string;
+  
+  // Joined data from API calls
+  user?: Profile;
+}
+
+export interface StoryFeedItem extends Story {
+  display_name: string;
+  avatar_url: string | null;
+  user_has_viewed: boolean;
+  is_own_story: boolean;
+  total_stories: number; // Number of stories this user has
+}

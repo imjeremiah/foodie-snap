@@ -31,7 +31,9 @@ import type {
   SpotlightPost,
   SpotlightFeedItem,
   SpotlightReaction,
-  SpotlightReport
+  SpotlightReport,
+  Story,
+  StoryFeedItem
 } from "../../types/database";
 
 /**
@@ -56,7 +58,7 @@ const supabaseBaseQuery = fetchBaseQuery({
 export const apiSlice = createApi({
   reducerPath: "api",
   baseQuery: supabaseBaseQuery,
-  tagTypes: ["Profile", "Friend", "Conversation", "Message", "Journal", "Spotlight"],
+  tagTypes: ["Profile", "Friend", "Conversation", "Message", "Journal", "Spotlight", "Story"],
   endpoints: (builder) => ({
     // Profile endpoints
     getCurrentProfile: builder.query<Profile, void>({
@@ -1954,6 +1956,166 @@ export const apiSlice = createApi({
       invalidatesTags: ["Message", "Conversation"],
     }),
 
+    // Stories endpoints
+    getStoriesFeed: builder.query<StoryFeedItem[], void>({
+      queryFn: async () => {
+        const { data, error } = await supabase.rpc('get_stories_feed');
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || [] };
+      },
+      providesTags: ["Story"],
+    }),
+
+    getUserStories: builder.query<Story[], string>({
+      queryFn: async (userId) => {
+        const { data, error } = await supabase.rpc('get_user_stories', {
+          target_user_id: userId
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || [] };
+      },
+      providesTags: (_result, _error, userId) => [
+        { type: "Story", id: userId }
+      ],
+    }),
+
+    createStory: builder.mutation<Story, {
+      imageUri: string;
+      caption?: string;
+      content_type?: 'photo' | 'video';
+      viewing_duration?: number;
+      background_color?: string;
+      options?: MediaUploadOptions;
+    }>({
+      queryFn: async ({
+        imageUri,
+        caption,
+        content_type = 'photo',
+        viewing_duration = 5,
+        background_color,
+        options
+      }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Upload media
+        const uploadResult = await uploadMedia(imageUri, content_type, options);
+        if (!uploadResult.success) {
+          return { error: { status: "CUSTOM_ERROR", error: uploadResult.error || "Upload failed" } };
+        }
+
+        // Create story
+        const { data, error } = await supabase
+          .from("stories")
+          .insert({
+            user_id: user.id,
+            image_url: uploadResult.data!.fullUrl,
+            thumbnail_url: uploadResult.data!.fullUrl, // Use same URL for now
+            caption,
+            content_type,
+            viewing_duration,
+            background_color,
+            file_size: null, // Will be calculated later if needed
+          })
+          .select(`
+            *,
+            user:profiles (
+              id,
+              display_name,
+              avatar_url
+            )
+          `)
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        // Update user stats
+        await supabase.rpc('increment_user_stat', {
+          user_id_param: user.id,
+          stat_name: 'stories_posted',
+          increment_by: 1
+        });
+
+        return { data };
+      },
+      invalidatesTags: ["Story", "Profile"],
+    }),
+
+    createStoryFromJournal: builder.mutation<string, {
+      journalEntryId: string;
+      caption?: string;
+      viewing_duration?: number;
+    }>({
+      queryFn: async ({ journalEntryId, caption, viewing_duration = 5 }) => {
+        const { data, error } = await supabase.rpc('create_story_from_journal', {
+          journal_entry_id_param: journalEntryId,
+          caption_param: caption || null,
+          viewing_duration_param: viewing_duration
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || "Story created successfully" };
+      },
+      invalidatesTags: ["Story", "Journal", "Profile"],
+    }),
+
+    recordStoryView: builder.mutation<{
+      success: boolean;
+      is_first_view: boolean;
+      view_count: number;
+      is_owner?: boolean;
+      error?: string;
+    }, {
+      story_id: string;
+      viewer_id: string;
+    }>({
+      queryFn: async ({ story_id, viewer_id }) => {
+        const { data, error } = await supabase.rpc('record_story_view', {
+          story_id_param: story_id,
+          viewer_id_param: viewer_id
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      invalidatesTags: (_result, _error, { story_id }) => [
+        { type: "Story", id: story_id },
+        "Story"
+      ],
+    }),
+
+    deleteStory: builder.mutation<string, string>({
+      queryFn: async (storyId) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { error } = await supabase
+          .from("stories")
+          .delete()
+          .eq("id", storyId)
+          .eq("user_id", user.id);
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: "Story deleted successfully" };
+      },
+      invalidatesTags: (_result, _error, storyId) => [
+        { type: "Story", id: storyId },
+        "Story"
+      ],
+    }),
+
+    cleanupExpiredStories: builder.mutation<number, void>({
+      queryFn: async () => {
+        const { data, error } = await supabase.rpc('cleanup_expired_stories');
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || 0 };
+      },
+      invalidatesTags: ["Story"],
+    }),
+
 
   }),
 });
@@ -2025,4 +2187,12 @@ export const {
   useRecordScreenshotMutation,
   useGetScreenshotNotificationsQuery,
   useSendSnapMessageEnhancedMutation,
+  // Stories hooks
+  useGetStoriesFeedQuery,
+  useGetUserStoriesQuery,
+  useCreateStoryMutation,
+  useCreateStoryFromJournalMutation,
+  useRecordStoryViewMutation,
+  useDeleteStoryMutation,
+  useCleanupExpiredStoriesMutation,
 } = apiSlice; 

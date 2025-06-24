@@ -18,6 +18,7 @@ import { formatTimeAgo } from "../../lib/utils";
 import { useDispatch } from "react-redux";
 import React, { useState, useMemo } from "react";
 import ConversationManagementModal from "../../components/conversation/ConversationManagementModal";
+import StoriesCarousel from "../../components/stories/StoriesCarousel";
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -329,6 +330,12 @@ export default function ChatScreen() {
           </View>
         )}
       </View>
+
+      {/* Stories Carousel */}
+      <StoriesCarousel />
+
+      {/* Separator */}
+      <View className="border-t border-border" />
 
       {/* Conversations List */}
       {isLoading ? (
