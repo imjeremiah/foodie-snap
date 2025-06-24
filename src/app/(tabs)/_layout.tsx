@@ -11,11 +11,11 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#16a34a", // Primary green color
-        tabBarInactiveTintColor: "#6b7280", // Muted gray color
+        tabBarActiveTintColor: "hsl(var(--primary))",
+        tabBarInactiveTintColor: "hsl(var(--muted-foreground))",
         tabBarStyle: {
-          backgroundColor: "#ffffff",
-          borderTopColor: "#e5e7eb",
+          backgroundColor: "hsl(var(--background))",
+          borderTopColor: "hsl(var(--border))",
         },
       }}
     >
