@@ -200,4 +200,75 @@ export interface ConversationWithDetails extends Conversation {
   last_message_time: string;
   unread_count: number;
   is_archived?: boolean; // Computed field based on current user
+}
+
+export interface SpotlightPost {
+  id: string;
+  user_id: string;
+  journal_entry_id?: string | null;
+  
+  // Content metadata
+  image_url: string;
+  thumbnail_url?: string | null;
+  caption?: string | null;
+  content_type: 'photo' | 'video';
+  
+  // Engagement metrics
+  like_count: number;
+  view_count: number;
+  share_count: number;
+  
+  // Content categorization
+  tags?: string[] | null;
+  
+  // Moderation and safety
+  is_flagged: boolean;
+  is_approved: boolean;
+  moderation_reason?: string | null;
+  
+  // Privacy and visibility controls
+  is_public: boolean;
+  audience_restriction: 'public' | 'friends' | 'friends_of_friends';
+  
+  // Technical metadata
+  dimensions?: { width: number; height: number } | null;
+  location_data?: { lat: number; lng: number; name: string } | null;
+  
+  created_at: string;
+  updated_at: string;
+  
+  // Joined data from API calls
+  user?: Profile;
+  user_has_liked?: boolean;
+}
+
+export interface SpotlightReaction {
+  id: string;
+  post_id: string;
+  user_id: string;
+  reaction_type: 'like' | 'heart' | 'fire' | 'wow';
+  created_at: string;
+  
+  // Joined data
+  user?: Profile;
+}
+
+export interface SpotlightReport {
+  id: string;
+  post_id: string;
+  reporter_id: string;
+  report_reason: 'inappropriate' | 'spam' | 'harassment' | 'copyright' | 'other';
+  description?: string | null;
+  status: 'pending' | 'reviewed' | 'resolved' | 'dismissed';
+  created_at: string;
+  
+  // Joined data
+  reporter?: Profile;
+  post?: SpotlightPost;
+}
+
+export interface SpotlightFeedItem extends SpotlightPost {
+  display_name: string;
+  avatar_url: string | null;
+  user_has_liked: boolean;
 } 

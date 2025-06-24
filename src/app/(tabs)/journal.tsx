@@ -25,7 +25,8 @@ import {
   useToggleJournalFavoriteMutation,
   useGetJournalStatsQuery,
   useReshareFromJournalMutation,
-  useGetConversationsQuery
+  useGetConversationsQuery,
+  useShareToSpotlightMutation
 } from "../../store/slices/api-slice";
 import type { JournalEntry, ConversationWithDetails } from "../../types/database";
 
@@ -114,6 +115,7 @@ export default function JournalScreen() {
   const [deleteJournalEntry] = useDeleteJournalEntryMutation();
   const [toggleFavorite] = useToggleJournalFavoriteMutation();
   const [reshareFromJournal] = useReshareFromJournalMutation();
+  const [shareToSpotlight] = useShareToSpotlightMutation();
 
   /**
    * Handle pull-to-refresh
@@ -244,6 +246,39 @@ export default function JournalScreen() {
       console.error('Reshare failed:', error);
       Alert.alert("Error", "Failed to reshare content");
     }
+  };
+
+  /**
+   * Handle share to spotlight
+   */
+  const handleShareToSpotlight = async () => {
+    if (!selectedEntry) return;
+
+    Alert.alert(
+      "Share to Spotlight",
+      "Share this photo with the public community?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Share",
+          onPress: async () => {
+            try {
+              await shareToSpotlight({
+                journalEntryId: selectedEntry.id,
+                caption: selectedEntry.caption || undefined,
+                audienceRestriction: 'public'
+              }).unwrap();
+
+              Alert.alert("Success", "Shared to Spotlight!");
+              setShowReshareModal(false);
+            } catch (error) {
+              console.error('Share to spotlight failed:', error);
+              Alert.alert("Error", "Failed to share to spotlight");
+            }
+          }
+        }
+      ]
+    );
   };
 
   /**
@@ -503,6 +538,23 @@ export default function JournalScreen() {
             </TouchableOpacity>
             <Text className="text-lg font-semibold text-foreground">Reshare</Text>
             <View className="w-12" />
+          </View>
+
+          {/* Share Options */}
+          <View className="p-4 border-b border-border">
+            <TouchableOpacity
+              className="flex-row items-center bg-primary/10 p-4 rounded-lg mb-3"
+              onPress={handleShareToSpotlight}
+            >
+              <View className="w-12 h-12 bg-primary rounded-full items-center justify-center mr-3">
+                <Ionicons name="globe" size={24} color="white" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-foreground font-semibold text-base">Share to Spotlight</Text>
+                <Text className="text-muted-foreground text-sm">Share with the public community</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} className="text-muted-foreground" />
+            </TouchableOpacity>
           </View>
 
           {/* Conversations List */}

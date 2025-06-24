@@ -17,7 +17,11 @@ import type {
   CompleteUserStats,
   UserPreferences,
   BlockedUser,
-  JournalEntry
+  JournalEntry,
+  SpotlightPost,
+  SpotlightFeedItem,
+  SpotlightReaction,
+  SpotlightReport
 } from "../../types/database";
 
 /**
@@ -42,7 +46,7 @@ const supabaseBaseQuery = fetchBaseQuery({
 export const apiSlice = createApi({
   reducerPath: "api",
   baseQuery: supabaseBaseQuery,
-  tagTypes: ["Profile", "Friend", "Conversation", "Message", "Journal"],
+  tagTypes: ["Profile", "Friend", "Conversation", "Message", "Journal", "Spotlight"],
   endpoints: (builder) => ({
     // Profile endpoints
     getCurrentProfile: builder.query<Profile, void>({
@@ -1537,6 +1541,191 @@ export const apiSlice = createApi({
       invalidatesTags: ["Profile", "Friend", "Conversation", "Message"],
     }),
 
+    // Spotlight endpoints
+    getSpotlightFeed: builder.query<SpotlightFeedItem[], {
+      feedType?: 'recent' | 'popular';
+      limit?: number;
+      offset?: number;
+    }>({
+      queryFn: async ({ feedType = 'recent', limit = 20, offset = 0 }) => {
+        const { data, error } = await supabase.rpc('get_spotlight_feed', {
+          feed_type: feedType,
+          limit_count: limit,
+          offset_count: offset
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || [] };
+      },
+      providesTags: ["Spotlight"],
+    }),
+
+    shareToSpotlight: builder.mutation<string, {
+      journalEntryId: string;
+      caption?: string;
+      audienceRestriction?: 'public' | 'friends' | 'friends_of_friends';
+    }>({
+      queryFn: async ({ journalEntryId, caption, audienceRestriction = 'public' }) => {
+        const { data, error } = await supabase.rpc('share_to_spotlight', {
+          journal_entry_id_param: journalEntryId,
+          caption_param: caption || null,
+          audience_restriction_param: audienceRestriction
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || "Shared to spotlight successfully" };
+      },
+      invalidatesTags: ["Spotlight", "Journal"],
+    }),
+
+    toggleSpotlightReaction: builder.mutation<boolean, {
+      postId: string;
+      reactionType?: 'like' | 'heart' | 'fire' | 'wow';
+    }>({
+      queryFn: async ({ postId, reactionType = 'like' }) => {
+        const { data, error } = await supabase.rpc('toggle_spotlight_reaction', {
+          post_id_param: postId,
+          reaction_type_param: reactionType
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || false };
+      },
+      invalidatesTags: (_result, _error, { postId }) => [
+        { type: "Spotlight", id: postId },
+        "Spotlight"
+      ],
+    }),
+
+    reportSpotlightPost: builder.mutation<string, {
+      postId: string;
+      reason: 'inappropriate' | 'spam' | 'harassment' | 'copyright' | 'other';
+      description?: string;
+    }>({
+      queryFn: async ({ postId, reason, description }) => {
+        const { data, error } = await supabase.rpc('report_spotlight_post', {
+          post_id_param: postId,
+          report_reason_param: reason,
+          description_param: description || null
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: "Post reported successfully" };
+      },
+      invalidatesTags: (_result, _error, { postId }) => [
+        { type: "Spotlight", id: postId }
+      ],
+    }),
+
+    getSpotlightPost: builder.query<SpotlightPost, string>({
+      queryFn: async (postId) => {
+        const { data, error } = await supabase
+          .from("spotlight_posts")
+          .select(`
+            *,
+            user:profiles (
+              id,
+              display_name,
+              avatar_url
+            )
+          `)
+          .eq("id", postId)
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      providesTags: (_result, _error, postId) => [
+        { type: "Spotlight", id: postId }
+      ],
+    }),
+
+    getUserSpotlightPosts: builder.query<SpotlightPost[], {
+      userId?: string;
+      limit?: number;
+      offset?: number;
+    }>({
+      queryFn: async ({ userId, limit = 20, offset = 0 }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        const targetUserId = userId || user?.id;
+        
+        if (!targetUserId) return { error: { status: "CUSTOM_ERROR", error: "No user ID provided" } };
+
+        const { data, error } = await supabase
+          .from("spotlight_posts")
+          .select(`
+            *,
+            user:profiles (
+              id,
+              display_name,
+              avatar_url
+            )
+          `)
+          .eq("user_id", targetUserId)
+          .eq("is_public", true)
+          .eq("is_approved", true)
+          .eq("is_flagged", false)
+          .order("created_at", { ascending: false })
+          .limit(limit)
+          .range(offset, offset + limit - 1);
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || [] };
+      },
+      providesTags: ["Spotlight"],
+    }),
+
+    deleteSpotlightPost: builder.mutation<string, string>({
+      queryFn: async (postId) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { error } = await supabase
+          .from("spotlight_posts")
+          .delete()
+          .eq("id", postId)
+          .eq("user_id", user.id);
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: "Post deleted successfully" };
+      },
+      invalidatesTags: (_result, _error, postId) => [
+        { type: "Spotlight", id: postId },
+        "Spotlight"
+      ],
+    }),
+
+    updateSpotlightPost: builder.mutation<SpotlightPost, {
+      postId: string;
+      caption?: string;
+      tags?: string[];
+      audienceRestriction?: 'public' | 'friends' | 'friends_of_friends';
+    }>({
+      queryFn: async ({ postId, ...updates }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .from("spotlight_posts")
+          .update({
+            ...updates,
+            tags: updates.tags ? updates.tags : null,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", postId)
+          .eq("user_id", user.id)
+          .select()
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      invalidatesTags: (_result, _error, { postId }) => [
+        { type: "Spotlight", id: postId },
+        "Spotlight"
+      ],
+    }),
+
 
   }),
 });
@@ -1592,4 +1781,13 @@ export const {
   useOrganizeJournalEntryMutation,
   useReshareFromJournalMutation,
   useGetJournalStatsQuery,
+  // Spotlight hooks
+  useGetSpotlightFeedQuery,
+  useShareToSpotlightMutation,
+  useToggleSpotlightReactionMutation,
+  useReportSpotlightPostMutation,
+  useGetSpotlightPostQuery,
+  useGetUserSpotlightPostsQuery,
+  useDeleteSpotlightPostMutation,
+  useUpdateSpotlightPostMutation,
 } = apiSlice; 
