@@ -7,41 +7,17 @@ import { View, Text, TouchableOpacity, Alert, ScrollView, Image } from "react-na
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSession } from "../../hooks/use-session";
-
-// Mock friends data for UI demonstration
-const mockFriends = [
-  {
-    id: "1",
-    display_name: "Alex Chen",
-    email: "alex@example.com",
-    avatar_url: null,
-    status: "accepted" as const,
-  },
-  {
-    id: "2", 
-    display_name: "Sarah Johnson",
-    email: "sarah@example.com",
-    avatar_url: null,
-    status: "accepted" as const,
-  },
-  {
-    id: "3",
-    display_name: "Mike Rodriguez",
-    email: "mike@example.com", 
-    avatar_url: null,
-    status: "pending" as const,
-  },
-  {
-    id: "4",
-    display_name: "Emma Wilson",
-    email: "emma@example.com",
-    avatar_url: null,
-    status: "accepted" as const,
-  },
-];
+import { 
+  useGetCurrentProfileQuery, 
+  useGetFriendsQuery,
+  useAcceptFriendRequestMutation 
+} from "../../store/slices/api-slice";
 
 export default function ProfileScreen() {
   const { user, signOut, loading } = useSession();
+  const { data: profile } = useGetCurrentProfileQuery();
+  const { data: friends = [], isLoading: friendsLoading } = useGetFriendsQuery();
+  const [acceptFriendRequest] = useAcceptFriendRequestMutation();
 
   /**
    * Handle sign out with confirmation
@@ -69,36 +45,45 @@ export default function ProfileScreen() {
   /**
    * Handle friend request action
    */
-  const handleFriendAction = (friendName: string, action: string) => {
-    Alert.alert(
-      `${action} Friend`,
-      `${action} ${friendName} will be implemented in the next phase!`
-    );
+  const handleFriendAction = async (friend: any, action: string) => {
+    if (action === "Accept" && friend.is_incoming_request && friend.status === "pending") {
+      try {
+        await acceptFriendRequest({ id: friend.id }).unwrap();
+        Alert.alert("Success", `${friend.friend?.display_name} is now your friend!`);
+      } catch (error) {
+        Alert.alert("Error", "Failed to accept friend request");
+      }
+    } else {
+      Alert.alert(
+        `${action} Friend`,
+        `${action} ${friend.friend?.display_name || friend.display_name} will be implemented in the next phase!`
+      );
+    }
   };
 
   /**
    * Render friend item
    */
-  const renderFriendItem = (friend: typeof mockFriends[0]) => (
+  const renderFriendItem = (friend: any) => (
     <View key={friend.id} className="flex-row items-center rounded-lg border border-border bg-card p-4">
       {/* Avatar */}
       <View className="h-12 w-12 items-center justify-center rounded-full bg-primary">
         <Text className="text-lg font-bold text-primary-foreground">
-          {friend.display_name?.charAt(0) || "?"}
+          {friend.friend?.display_name?.charAt(0) || "?"}
         </Text>
       </View>
 
       {/* Friend info */}
       <View className="ml-3 flex-1">
         <Text className="font-semibold text-foreground">
-          {friend.display_name || "Unknown User"}
+          {friend.friend?.display_name || "Unknown User"}
         </Text>
         <Text className="text-sm text-muted-foreground">
-          {friend.email}
+          {friend.friend?.email || "Unknown email"}
         </Text>
         {friend.status === "pending" && (
           <Text className="text-xs text-orange-500 font-medium">
-            Friend request pending
+            {friend.is_incoming_request ? "Wants to be friends" : "Friend request pending"}
           </Text>
         )}
       </View>
@@ -106,15 +91,15 @@ export default function ProfileScreen() {
       {/* Action button */}
       <TouchableOpacity
         className={`rounded-md px-3 py-2 ${
-          friend.status === "pending" ? "bg-orange-500" : "bg-primary"
+          (friend.status === "pending" && friend.is_incoming_request) ? "bg-orange-500" : "bg-primary"
         }`}
         onPress={() => handleFriendAction(
-          friend.display_name || "User", 
-          friend.status === "pending" ? "Accept" : "Message"
+          friend, 
+          (friend.status === "pending" && friend.is_incoming_request) ? "Accept" : "Message"
         )}
       >
         <Text className="text-sm font-medium text-white">
-          {friend.status === "pending" ? "Accept" : "Message"}
+          {(friend.status === "pending" && friend.is_incoming_request) ? "Accept" : "Message"}
         </Text>
       </TouchableOpacity>
     </View>
@@ -143,10 +128,10 @@ export default function ProfileScreen() {
             
             <View className="ml-4 flex-1">
               <Text className="text-xl font-bold text-foreground">
-                {user?.email?.split("@")[0] || "User"}
+                {profile?.display_name || user?.email?.split("@")[0] || "User"}
               </Text>
               <Text className="text-sm text-muted-foreground">
-                {user?.email}
+                {profile?.email || user?.email}
               </Text>
               <View className="mt-2 flex-row">
                 <View className="rounded-full bg-primary/10 px-3 py-1">
@@ -161,22 +146,24 @@ export default function ProfileScreen() {
           {/* Bio section */}
           <View className="mt-4">
             <Text className="text-sm text-muted-foreground">
-              "Documenting my fitness journey one meal at a time! 💪 Love sharing healthy recipes and workout tips."
+              {profile?.bio || "Welcome to FoodieSnap! Share your healthy journey with friends 💪"}
             </Text>
           </View>
 
           {/* Stats */}
           <View className="mt-4 flex-row justify-around border-t border-border pt-4">
             <View className="items-center">
-              <Text className="text-lg font-bold text-foreground">12</Text>
+              <Text className="text-lg font-bold text-foreground">0</Text>
               <Text className="text-xs text-muted-foreground">Snaps</Text>
             </View>
             <View className="items-center">
-              <Text className="text-lg font-bold text-foreground">{mockFriends.filter(f => f.status === 'accepted').length}</Text>
+              <Text className="text-lg font-bold text-foreground">
+                {friendsLoading ? "..." : friends.filter(f => f.status === 'accepted').length}
+              </Text>
               <Text className="text-xs text-muted-foreground">Friends</Text>
             </View>
             <View className="items-center">
-              <Text className="text-lg font-bold text-foreground">3</Text>
+              <Text className="text-lg font-bold text-foreground">0</Text>
               <Text className="text-xs text-muted-foreground">Streak</Text>
             </View>
           </View>
@@ -194,7 +181,19 @@ export default function ProfileScreen() {
           </View>
 
           <View className="space-y-3">
-            {mockFriends.map(renderFriendItem)}
+            {friendsLoading ? (
+              <View className="rounded-lg border border-border bg-card p-4">
+                <Text className="text-center text-muted-foreground">Loading friends...</Text>
+              </View>
+            ) : friends.length > 0 ? (
+              friends.map(renderFriendItem)
+            ) : (
+              <View className="rounded-lg border border-border bg-card p-4">
+                <Text className="text-center text-muted-foreground">
+                  No friends yet. Add some friends to get started!
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 

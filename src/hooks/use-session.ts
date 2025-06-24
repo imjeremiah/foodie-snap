@@ -1,6 +1,7 @@
 /**
  * @file Custom hook for managing user session state.
  * Provides authentication state and methods for sign in, sign up, and sign out.
+ * Integrates with real-time subscriptions for live data updates.
  */
 
 import { useEffect } from "react";
@@ -8,9 +9,13 @@ import { useDispatch, useSelector } from "react-redux";
 import { supabase } from "../lib/supabase";
 import { setSession, clearSession, setLoading } from "../store/slices/auth-slice";
 import { RootState, AppDispatch } from "../store";
+import { 
+  initializeRealTimeSubscriptions, 
+  cleanupRealTimeSubscriptions 
+} from "../lib/realtime";
 
 /**
- * Custom hook for managing user authentication state
+ * Custom hook for managing user authentication state with real-time subscriptions
  * @returns Object containing auth state and methods
  */
 export function useSession() {
@@ -23,16 +28,37 @@ export function useSession() {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       dispatch(setSession({ user: session?.user ?? null, session }));
+      
+      // Initialize real-time subscriptions if user is authenticated
+      if (session?.user) {
+        initializeRealTimeSubscriptions();
+      }
     });
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      dispatch(setSession({ user: session?.user ?? null, session }));
+      console.log("Auth state changed:", event);
+      
+      if (event === "SIGNED_IN" && session?.user) {
+        dispatch(setSession({ user: session.user, session }));
+        // Initialize real-time subscriptions on sign in
+        initializeRealTimeSubscriptions();
+      } else if (event === "SIGNED_OUT") {
+        dispatch(clearSession());
+        // Clean up real-time subscriptions on sign out
+        cleanupRealTimeSubscriptions();
+      } else {
+        dispatch(setSession({ user: session?.user ?? null, session }));
+      }
     });
 
-    return () => subscription.unsubscribe();
+    // Cleanup subscriptions when component unmounts
+    return () => {
+      subscription.unsubscribe();
+      cleanupRealTimeSubscriptions();
+    };
   }, [dispatch]);
 
   /**
@@ -88,6 +114,9 @@ export function useSession() {
   const signOut = async () => {
     dispatch(setLoading(true));
     try {
+      // Clean up real-time subscriptions before signing out
+      cleanupRealTimeSubscriptions();
+      
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       dispatch(clearSession());

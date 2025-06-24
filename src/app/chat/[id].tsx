@@ -3,7 +3,7 @@
  * Shows conversation history with chat bubbles and provides text input for new messages.
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,70 +16,48 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
-
-// Mock messages data for UI demonstration
-const mockMessages = [
-  {
-    id: "1",
-    content: "Hey! Just saw your latest food post 🔥",
-    sender_id: "other",
-    created_at: "2023-12-23T10:30:00Z",
-    message_type: "text" as const,
-  },
-  {
-    id: "2",
-    content: "Thanks! It was my first time making overnight oats",
-    sender_id: "me",
-    created_at: "2023-12-23T10:32:00Z", 
-    message_type: "text" as const,
-  },
-  {
-    id: "3",
-    content: "They look amazing! Can you share the recipe?",
-    sender_id: "other",
-    created_at: "2023-12-23T10:35:00Z",
-    message_type: "text" as const,
-  },
-  {
-    id: "4",
-    content: "Of course! 1 cup oats, 1 cup almond milk, 1 tbsp chia seeds, 1 tsp honey, berries on top 😋",
-    sender_id: "me",
-    created_at: "2023-12-23T10:37:00Z",
-    message_type: "text" as const,
-  },
-  {
-    id: "5",
-    content: "Perfect! I'll try this tomorrow morning",
-    sender_id: "other",
-    created_at: "2023-12-23T10:40:00Z",
-    message_type: "text" as const,
-  },
-  {
-    id: "6",
-    content: "Let me know how it turns out! 👍",
-    sender_id: "me",
-    created_at: "2023-12-23T10:42:00Z",
-    message_type: "text" as const,
-  },
-];
+import { 
+  useGetMessagesQuery, 
+  useSendMessageMutation 
+} from "../../store/slices/api-slice";
+import { useSession } from "../../hooks/use-session";
+import { subscribeToMessages, unsubscribeFromMessages } from "../../lib/realtime";
 
 export default function ChatThreadScreen() {
   const router = useRouter();
+  const { user } = useSession();
   const { id, participantName } = useLocalSearchParams<{
     id: string;
     participantName: string;
   }>();
   
   const [messageText, setMessageText] = useState("");
+  const { data: messages = [], isLoading } = useGetMessagesQuery(id!);
+  const [sendMessage, { isLoading: isSending }] = useSendMessageMutation();
+
+  // Subscribe to real-time messages for this conversation
+  useEffect(() => {
+    if (id) {
+      subscribeToMessages(id);
+      return () => unsubscribeFromMessages(id);
+    }
+  }, [id]);
 
   /**
    * Handle sending a new message
    */
-  const handleSendMessage = () => {
-    if (messageText.trim()) {
-      // This will be implemented with real message sending in next phase
-      console.log("Sending message:", messageText);
-      setMessageText("");
+  const handleSendMessage = async () => {
+    if (messageText.trim() && id && user) {
+      try {
+        await sendMessage({
+          conversation_id: id,
+          content: messageText.trim(),
+          message_type: "text"
+        }).unwrap();
+        setMessageText("");
+      } catch (error) {
+        console.error("Failed to send message:", error);
+      }
     }
   };
 
@@ -101,8 +79,8 @@ export default function ChatThreadScreen() {
   /**
    * Render individual message bubble
    */
-  const renderMessage = ({ item: message }: { item: typeof mockMessages[0] }) => {
-    const isMe = message.sender_id === "me";
+  const renderMessage = ({ item: message }: { item: any }) => {
+    const isMe = message.sender_id === user?.id;
     
     return (
       <View
@@ -194,9 +172,13 @@ export default function ChatThreadScreen() {
         </View>
 
         {/* Messages List */}
-        {mockMessages.length > 0 ? (
+        {isLoading ? (
+          <View className="flex-1 items-center justify-center">
+            <Text className="text-muted-foreground">Loading messages...</Text>
+          </View>
+        ) : messages.length > 0 ? (
           <FlatList
-            data={mockMessages}
+            data={messages}
             renderItem={renderMessage}
             keyExtractor={(item) => item.id}
             className="flex-1"
@@ -229,10 +211,17 @@ export default function ChatThreadScreen() {
               
               {messageText.trim() && (
                 <TouchableOpacity
-                  className="ml-2 h-8 w-8 items-center justify-center rounded-full bg-primary"
+                  className={`ml-2 h-8 w-8 items-center justify-center rounded-full ${
+                    isSending ? "bg-muted" : "bg-primary"
+                  }`}
                   onPress={handleSendMessage}
+                  disabled={isSending}
                 >
-                  <Ionicons name="send" size={16} color="white" />
+                  <Ionicons 
+                    name={isSending ? "hourglass" : "send"} 
+                    size={16} 
+                    color="white" 
+                  />
                 </TouchableOpacity>
               )}
             </View>
