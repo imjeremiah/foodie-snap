@@ -7,7 +7,7 @@ import { View, Text, TouchableOpacity, FlatList } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useGetConversationsQuery, useDebugConversationsQuery, apiSlice } from "../../store/slices/api-slice";
+import { useGetConversationsQuery, useSeedDemoDataMutation, apiSlice } from "../../store/slices/api-slice";
 import { formatTimeAgo } from "../../lib/utils";
 import { useDispatch } from "react-redux";
 
@@ -15,9 +15,7 @@ export default function ChatScreen() {
   const router = useRouter();
   const dispatch = useDispatch();
   const { data: conversations = [], isLoading } = useGetConversationsQuery();
-  
-  // Temporary debug query (keeping for troubleshooting)
-  const { data: debugData, isLoading: debugLoading } = useDebugConversationsQuery();
+  const [seedDemoData, { isLoading: isSeeding }] = useSeedDemoDataMutation();
 
   /**
    * Force refresh data
@@ -46,6 +44,18 @@ export default function ChatScreen() {
   const handleNewChat = () => {
     // This will be implemented in next phases
     console.log("New chat functionality will be implemented in next phase");
+  };
+
+  /**
+   * Handle seeding demo data for testing
+   */
+  const handleSeedDemo = async () => {
+    try {
+      await seedDemoData().unwrap();
+      console.log("✅ Demo data seeded successfully!");
+    } catch (error) {
+      console.error("❌ Failed to seed demo data:", error);
+    }
   };
 
 
@@ -133,6 +143,19 @@ export default function ChatScreen() {
         <View className="flex-row space-x-3">
           <TouchableOpacity className="h-10 w-10 items-center justify-center rounded-full bg-muted">
             <Ionicons name="search-outline" size={20} color="gray" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            className={`h-10 w-10 items-center justify-center rounded-full ${
+              isSeeding ? "bg-gray-400" : "bg-green-500"
+            }`}
+            onPress={handleSeedDemo}
+            disabled={isSeeding}
+          >
+            <Ionicons 
+              name={isSeeding ? "hourglass" : "flask"} 
+              size={20} 
+              color="white" 
+            />
           </TouchableOpacity>
           <TouchableOpacity 
             className="h-10 w-10 items-center justify-center rounded-full bg-orange-500"

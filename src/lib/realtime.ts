@@ -233,4 +233,63 @@ export function cleanupRealTimeSubscriptions() {
  */
 export function getActiveSubscriptions() {
   return Array.from(activeChannels.keys());
+}
+
+/**
+ * Subscribe to typing indicators for a specific conversation
+ * @param conversationId - The conversation ID to subscribe to
+ * @param callback - Callback function to handle typing status updates
+ */
+export function subscribeToTypingIndicators(
+  conversationId: string, 
+  callback: (typingUsers: Array<{user_id: string, display_name: string, typing: boolean}>) => void
+) {
+  const channelName = `typing:${conversationId}`;
+  
+  // Don't create duplicate subscriptions
+  if (activeChannels.has(channelName)) {
+    return;
+  }
+
+  console.log(`Subscribing to typing indicators for conversation: ${conversationId}`);
+
+  const channel = supabase
+    .channel(channelName)
+    .on('presence', { event: 'sync' }, () => {
+      const state = channel.presenceState();
+      const typingUsers = Object.values(state)
+        .flat()
+        .filter((user: any) => user.typing && Date.now() - user.timestamp < 5000) // 5 second timeout
+        .map((user: any) => ({
+          user_id: user.user_id,
+          display_name: user.display_name,
+          typing: user.typing
+        }));
+      
+      callback(typingUsers);
+    })
+    .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+      console.log('User started typing:', key, newPresences);
+    })
+    .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+      console.log('User stopped typing:', key, leftPresences);
+    })
+    .subscribe();
+
+  activeChannels.set(channelName, channel);
+}
+
+/**
+ * Unsubscribe from typing indicators for a specific conversation
+ * @param conversationId - The conversation ID to unsubscribe from
+ */
+export function unsubscribeFromTypingIndicators(conversationId: string) {
+  const channelName = `typing:${conversationId}`;
+  const channel = activeChannels.get(channelName);
+  
+  if (channel) {
+    console.log(`Unsubscribing from typing indicators for conversation: ${conversationId}`);
+    supabase.removeChannel(channel);
+    activeChannels.delete(channelName);
+  }
 } 

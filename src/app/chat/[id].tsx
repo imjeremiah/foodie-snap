@@ -3,7 +3,7 @@
  * Shows conversation history with chat bubbles and provides text input for new messages.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -12,16 +12,28 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Image,
+  Dimensions,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { 
   useGetMessagesQuery, 
-  useSendMessageMutation 
+  useSendMessageMutation,
+  useMarkConversationAsReadMutation,
+  useSetTypingStatusMutation,
+  useSendSnapMessageMutation,
+  useCleanupExpiredMessagesMutation,
 } from "../../store/slices/api-slice";
 import { useSession } from "../../hooks/use-session";
-import { subscribeToMessages, unsubscribeFromMessages } from "../../lib/realtime";
+import { 
+  subscribeToMessages, 
+  unsubscribeFromMessages,
+  subscribeToTypingIndicators,
+  unsubscribeFromTypingIndicators,
+} from "../../lib/realtime";
 
 export default function ChatThreadScreen() {
   const router = useRouter();
@@ -32,16 +44,71 @@ export default function ChatThreadScreen() {
   }>();
   
   const [messageText, setMessageText] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [otherUserTyping, setOtherUserTyping] = useState(false);
+  const [expiredMessages, setExpiredMessages] = useState<Set<string>>(new Set());
+  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  
   const { data: messages = [], isLoading } = useGetMessagesQuery(id!);
   const [sendMessage, { isLoading: isSending }] = useSendMessageMutation();
+  const [markConversationAsRead] = useMarkConversationAsReadMutation();
+  const [setTypingStatus] = useSetTypingStatusMutation();
+  const [sendSnapMessage] = useSendSnapMessageMutation();
+  const [cleanupExpiredMessages] = useCleanupExpiredMessagesMutation();
 
-  // Subscribe to real-time messages for this conversation
+  // Subscribe to real-time messages and typing indicators
   useEffect(() => {
     if (id) {
       subscribeToMessages(id);
-      return () => unsubscribeFromMessages(id);
+      subscribeToTypingIndicators(id, (typingUsers) => {
+        // Check if other user is typing (not current user)
+        const othersTyping = typingUsers.some(u => u.user_id !== user?.id && u.typing);
+        setOtherUserTyping(othersTyping);
+      });
+      
+      return () => {
+        unsubscribeFromMessages(id);
+        unsubscribeFromTypingIndicators(id);
+      };
     }
-  }, [id]);
+  }, [id, user?.id]);
+
+  // Mark conversation as read when messages are loaded
+  useEffect(() => {
+    if (messages.length > 0 && id) {
+      markConversationAsRead(id);
+    }
+  }, [messages.length, id, markConversationAsRead]);
+
+  // Handle message expiration
+  useEffect(() => {
+    const checkExpiredMessages = () => {
+      const now = new Date();
+      const newExpiredMessages = new Set(expiredMessages);
+      
+      messages.forEach(message => {
+        if (message.expires_at && new Date(message.expires_at) < now) {
+          newExpiredMessages.add(message.id);
+        }
+      });
+      
+      if (newExpiredMessages.size !== expiredMessages.size) {
+        setExpiredMessages(newExpiredMessages);
+      }
+    };
+
+    const interval = setInterval(checkExpiredMessages, 1000); // Check every second
+    return () => clearInterval(interval);
+  }, [messages, expiredMessages]);
+
+  // Cleanup expired messages periodically
+  useEffect(() => {
+    const cleanup = setInterval(() => {
+      cleanupExpiredMessages();
+    }, 60000); // Cleanup every minute
+    
+    return () => clearInterval(cleanup);
+  }, [cleanupExpiredMessages]);
 
   /**
    * Handle sending a new message
@@ -55,6 +122,7 @@ export default function ChatThreadScreen() {
           message_type: "text"
         }).unwrap();
         setMessageText("");
+        handleStopTyping();
       } catch (error) {
         console.error("Failed to send message:", error);
       }
@@ -62,9 +130,91 @@ export default function ChatThreadScreen() {
   };
 
   /**
+   * Handle sending a snap message
+   */
+  const handleSendSnap = () => {
+    Alert.alert(
+      "Send Snap",
+      "Choose snap duration",
+      [
+        { text: "3 seconds", onPress: () => sendSnap(3) },
+        { text: "5 seconds", onPress: () => sendSnap(5) },
+        { text: "10 seconds", onPress: () => sendSnap(10) },
+        { text: "Cancel", style: "cancel" }
+      ]
+    );
+  };
+
+  /**
+   * Send a snap message with expiration
+   */
+  const sendSnap = async (seconds: number) => {
+    if (messageText.trim() && id && user) {
+      try {
+        await sendSnapMessage({
+          conversation_id: id,
+          content: messageText.trim(),
+          expires_in_seconds: seconds
+        }).unwrap();
+        setMessageText("");
+        handleStopTyping();
+      } catch (error) {
+        console.error("Failed to send snap:", error);
+      }
+    }
+  };
+
+  /**
+   * Handle typing status
+   */
+  const handleStartTyping = () => {
+    if (!isTyping && id) {
+      setIsTyping(true);
+      setTypingStatus({ conversation_id: id, is_typing: true });
+    }
+    
+    // Reset typing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    
+    typingTimeoutRef.current = setTimeout(() => {
+      handleStopTyping();
+    }, 3000); // Stop typing after 3 seconds of inactivity
+  };
+
+  /**
+   * Handle stop typing
+   */
+  const handleStopTyping = () => {
+    if (isTyping && id) {
+      setIsTyping(false);
+      setTypingStatus({ conversation_id: id, is_typing: false });
+    }
+    
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+  };
+
+  /**
+   * Handle text input changes
+   */
+  const handleTextChange = (text: string) => {
+    setMessageText(text);
+    
+    if (text.trim()) {
+      handleStartTyping();
+    } else {
+      handleStopTyping();
+    }
+  };
+
+  /**
    * Handle back navigation
    */
   const handleBack = () => {
+    handleStopTyping();
     router.back();
   };
 
@@ -77,10 +227,47 @@ export default function ChatThreadScreen() {
   };
 
   /**
+   * Check if message is read by other user
+   */
+  const isMessageRead = (message: any) => {
+    if (message.sender_id === user?.id) {
+      // Check if other participants have read this message
+      const readByOthers = Object.keys(message.read_by || {}).some(
+        userId => userId !== user.id
+      );
+      return readByOthers;
+    }
+    return false;
+  };
+
+  /**
+   * Get time remaining for expiring message
+   */
+  const getTimeRemaining = (expiresAt: string) => {
+    const now = new Date();
+    const expiry = new Date(expiresAt);
+    const remaining = Math.max(0, Math.floor((expiry.getTime() - now.getTime()) / 1000));
+    return remaining;
+  };
+
+  /**
    * Render individual message bubble
    */
   const renderMessage = ({ item: message }: { item: any }) => {
     const isMe = message.sender_id === user?.id;
+    const isImage = message.message_type === 'image' && message.image_url;
+    const isSnap = message.message_type === 'snap';
+    const isExpired = expiredMessages.has(message.id);
+    const isRead = isMessageRead(message);
+    const screenWidth = Dimensions.get('window').width;
+    const imageMaxWidth = screenWidth * 0.6;
+    
+    // Don't render expired messages
+    if (isExpired || (message.expires_at && new Date(message.expires_at) < new Date())) {
+      return null;
+    }
+
+    const timeRemaining = message.expires_at ? getTimeRemaining(message.expires_at) : null;
     
     return (
       <View
@@ -89,25 +276,56 @@ export default function ChatThreadScreen() {
         <View className={`max-w-[80%] ${isMe ? "items-end" : "items-start"}`}>
           {/* Message bubble */}
           <View
-            className={`rounded-2xl px-4 py-3 ${
+            className={`rounded-2xl ${
+              isImage ? "overflow-hidden p-0" : "px-4 py-3"
+            } ${
               isMe
-                ? "rounded-br-md bg-primary"
-                : "rounded-bl-md bg-muted"
+                ? `rounded-br-md ${isSnap ? 'bg-purple-500' : 'bg-primary'}`
+                : `rounded-bl-md ${isSnap ? 'bg-purple-100' : 'bg-muted'}`
             }`}
           >
-            <Text
-              className={`text-sm ${
-                isMe ? "text-primary-foreground" : "text-foreground"
-              }`}
-            >
-              {message.content}
-            </Text>
+            {isImage ? (
+              <Image
+                source={{ uri: message.image_url }}
+                style={{ 
+                  width: imageMaxWidth, 
+                  height: imageMaxWidth * 0.75,
+                  borderRadius: 16
+                }}
+                resizeMode="cover"
+              />
+            ) : (
+              <View>
+                <Text
+                  className={`text-sm ${
+                    isMe 
+                      ? (isSnap ? "text-white" : "text-primary-foreground")
+                      : (isSnap ? "text-purple-800" : "text-foreground")
+                  }`}
+                >
+                  {message.content}
+                </Text>
+                {isSnap && timeRemaining !== null && (
+                  <Text className={`text-xs mt-1 ${isMe ? "text-purple-200" : "text-purple-600"}`}>
+                    ⏱️ {timeRemaining}s
+                  </Text>
+                )}
+              </View>
+            )}
           </View>
           
-          {/* Timestamp */}
-          <Text className="mt-1 text-xs text-muted-foreground">
-            {formatTime(message.created_at)}
-          </Text>
+          {/* Timestamp and read status */}
+          <View className="mt-1 flex-row items-center space-x-1">
+            <Text className="text-xs text-muted-foreground">
+              {formatTime(message.created_at)}
+            </Text>
+            {isMe && isRead && (
+              <Ionicons name="checkmark-done" size={12} color="#10b981" />
+            )}
+            {isMe && !isRead && (
+              <Ionicons name="checkmark" size={12} color="gray" />
+            )}
+          </View>
         </View>
       </View>
     );
@@ -177,14 +395,35 @@ export default function ChatThreadScreen() {
             <Text className="text-muted-foreground">Loading messages...</Text>
           </View>
         ) : messages.length > 0 ? (
-          <FlatList
-            data={messages}
-            renderItem={renderMessage}
-            keyExtractor={(item) => item.id}
-            className="flex-1"
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingVertical: 16 }}
-          />
+          <View className="flex-1">
+            <FlatList
+              data={messages}
+              renderItem={renderMessage}
+              keyExtractor={(item) => item.id}
+              className="flex-1"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingVertical: 16 }}
+            />
+            
+            {/* Typing Indicator */}
+            {otherUserTyping && (
+              <View className="px-4 py-2">
+                <View className="flex-row items-center">
+                  <View className="h-8 w-8 items-center justify-center rounded-full bg-primary mr-3">
+                    <Text className="text-xs font-bold text-primary-foreground">
+                      {participantName?.charAt(0) || "?"}
+                    </Text>
+                  </View>
+                  <View className="flex-row items-center space-x-1">
+                    <View className="h-2 w-2 rounded-full bg-gray-400 animate-pulse" />
+                    <View className="h-2 w-2 rounded-full bg-gray-400 animate-pulse" style={{ animationDelay: "0.2s" }} />
+                    <View className="h-2 w-2 rounded-full bg-gray-400 animate-pulse" style={{ animationDelay: "0.4s" }} />
+                    <Text className="ml-2 text-xs text-muted-foreground">typing...</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
         ) : (
           renderEmptyState()
         )}
@@ -204,25 +443,36 @@ export default function ChatThreadScreen() {
                 placeholder="Type a message..."
                 placeholderTextColor="gray"
                 value={messageText}
-                onChangeText={setMessageText}
+                onChangeText={handleTextChange}
                 multiline
                 maxLength={500}
               />
               
               {messageText.trim() && (
-                <TouchableOpacity
-                  className={`ml-2 h-8 w-8 items-center justify-center rounded-full ${
-                    isSending ? "bg-muted" : "bg-primary"
-                  }`}
-                  onPress={handleSendMessage}
-                  disabled={isSending}
-                >
-                  <Ionicons 
-                    name={isSending ? "hourglass" : "send"} 
-                    size={16} 
-                    color="white" 
-                  />
-                </TouchableOpacity>
+                <View className="ml-2 flex-row space-x-2">
+                  {/* Snap button */}
+                  <TouchableOpacity
+                    className="h-8 w-8 items-center justify-center rounded-full bg-purple-500"
+                    onPress={handleSendSnap}
+                  >
+                    <Ionicons name="flash" size={16} color="white" />
+                  </TouchableOpacity>
+                  
+                  {/* Regular send button */}
+                  <TouchableOpacity
+                    className={`h-8 w-8 items-center justify-center rounded-full ${
+                      isSending ? "bg-muted" : "bg-primary"
+                    }`}
+                    onPress={handleSendMessage}
+                    disabled={isSending}
+                  >
+                    <Ionicons 
+                      name={isSending ? "hourglass" : "send"} 
+                      size={16} 
+                      color="white" 
+                    />
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
             

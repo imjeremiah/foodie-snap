@@ -12,10 +12,12 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.8.2",
     "@supabase/supabase-js": "^2.50.0",
+    "base64-arraybuffer": "^1.0.2",
     "dotenv": "^16.5.0",
     "expo": "^53.0.0",
     "expo-camera": "~16.1.8",
     "expo-constants": "~17.1.6",
+    "expo-image-manipulator": "^13.1.7",
     "expo-linking": "~7.1.5",
     "expo-media-library": "~17.1.7",
     "expo-router": "~5.1.0",

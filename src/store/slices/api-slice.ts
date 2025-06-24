@@ -5,6 +5,7 @@
 
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import { supabase } from "../../lib/supabase";
+import { uploadPhoto, PhotoUploadOptions, PhotoUploadResult } from "../../lib/storage";
 import type { 
   Profile, 
   Friend, 
@@ -260,9 +261,9 @@ export const apiSlice = createApi({
           )?.profile;
           
           const lastMessage = conv.messages?.[conv.messages.length - 1];
-          const unreadCount = conv.messages?.filter(
-            (m: any) => m.sender_id !== user.id && !m.read_by?.[user.id]
-          ).length || 0;
+          const unreadCount = (conv.messages || []).filter(
+            (m: any) => m.sender_id !== user.id && !(m.read_by || {})[user.id]
+          ).length;
 
           return {
             ...conv,
@@ -277,7 +278,7 @@ export const apiSlice = createApi({
             },
             last_message_preview: lastMessage?.content || "No messages yet",
             last_message_time: lastMessage?.created_at || conv.created_at,
-            unread_count,
+            unread_count: unreadCount,
           };
         });
 
@@ -383,76 +384,281 @@ export const apiSlice = createApi({
     }),
 
     // Demo data management
-    resetDemoData: builder.mutation<void, void>({
+    resetDemoData: builder.mutation<string, void>({
       queryFn: async () => {
         const { error } = await supabase.rpc("reset_demo_data");
         if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
-        return { data: undefined };
+        return { data: "Demo data reset successfully" };
       },
       invalidatesTags: ["Profile", "Friend", "Conversation", "Message"],
     }),
 
-    // Debug conversations - temporary for debugging
-    debugConversations: builder.query<any, void>({
-      queryFn: async () => {
+    // Photo upload endpoint
+    uploadPhoto: builder.mutation<PhotoUploadResult, { 
+      imageUri: string; 
+      options?: PhotoUploadOptions 
+    }>({
+      queryFn: async ({ imageUri, options }) => {
+        const result = await uploadPhoto(imageUri, options);
+        if (!result.success) {
+          return { error: { status: "CUSTOM_ERROR", error: result.error || "Upload failed" } };
+        }
+        return { data: result };
+      },
+    }),
+
+    // Send photo message endpoint
+    sendPhotoMessage: builder.mutation<Message, {
+      conversation_id: string;
+      imageUri: string;
+      options?: PhotoUploadOptions;
+    }>({
+      queryFn: async ({ conversation_id, imageUri, options }) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
 
-        console.log("🔍 Debug: Starting conversations query for user:", user.id);
-
-        // First, get conversation IDs where user is a participant
-        const { data: participantData, error: participantError } = await supabase
-          .from("conversation_participants")
-          .select("conversation_id")
-          .eq("user_id", user.id);
-
-        console.log("🔍 Debug: Participant data:", participantData, "Error:", participantError);
-
-        if (participantError) return { error: { status: "CUSTOM_ERROR", error: participantError.message } };
-
-        // If no conversations, return empty array
-        if (!participantData || participantData.length === 0) {
-          console.log("🔍 Debug: No conversations found");
-          return { data: [] };
+        // First upload the photo
+        const uploadResult = await uploadPhoto(imageUri, options);
+        if (!uploadResult.success) {
+          return { error: { status: "CUSTOM_ERROR", error: uploadResult.error || "Photo upload failed" } };
         }
 
-        // Extract conversation IDs
-        const conversationIds = participantData.map(p => p.conversation_id);
-        console.log("🔍 Debug: Conversation IDs:", conversationIds);
-
-        // Get conversations with all related data
+        // Then create the message with the photo URL
         const { data, error } = await supabase
-          .from("conversations")
+          .from("messages")
+          .insert({
+            conversation_id,
+            sender_id: user.id,
+            image_url: uploadResult.data!.fullUrl,
+            message_type: "image"
+          })
           .select(`
             *,
-            participants:conversation_participants (
-              user_id,
-              profile:profiles (
-                id,
-                email,
-                display_name,
-                avatar_url
-              )
-            ),
-            messages (
+            sender:profiles (
               id,
-              content,
-              created_at,
-              sender_id,
-              message_type
+              display_name,
+              avatar_url
             )
           `)
-          .in("id", conversationIds)
-          .order("updated_at", { ascending: false });
-
-        console.log("🔍 Debug: Raw conversations data:", data, "Error:", error);
+          .single();
 
         if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
 
-        return { data: data || [] };
+        // Update conversation timestamp
+        await supabase
+          .from("conversations")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", conversation_id);
+
+        return { data };
       },
-      providesTags: ["Conversation"],
+      invalidatesTags: (_result, _error, { conversation_id }) => [
+        { type: "Message", id: conversation_id },
+        "Conversation"
+      ],
     }),
+
+    // Mark message as read
+    markMessageAsRead: builder.mutation<string, { 
+      message_id: string; 
+      conversation_id: string;
+    }>({
+      queryFn: async ({ message_id, conversation_id }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // First get the current message to update read_by
+        const { data: message, error: fetchError } = await supabase
+          .from("messages")
+          .select("read_by")
+          .eq("id", message_id)
+          .single();
+
+        if (fetchError) return { error: { status: "CUSTOM_ERROR", error: fetchError.message } };
+
+        // Update read_by with current user and timestamp
+        const updatedReadBy = {
+          ...message.read_by,
+          [user.id]: new Date().toISOString()
+        };
+
+        const { error } = await supabase
+          .from("messages")
+          .update({ read_by: updatedReadBy })
+          .eq("id", message_id);
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        return { data: "Message marked as read" };
+      },
+      invalidatesTags: (_result, _error, { conversation_id }) => [
+        { type: "Message", id: conversation_id },
+        "Conversation"
+      ],
+    }),
+
+    // Mark all messages in conversation as read
+    markConversationAsRead: builder.mutation<string, string>({
+      queryFn: async (conversation_id) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Get all unread messages in the conversation
+        const { data: messages, error: fetchError } = await supabase
+          .from("messages")
+          .select("id, read_by")
+          .eq("conversation_id", conversation_id)
+          .neq("sender_id", user.id); // Don't mark own messages as read
+
+        if (fetchError) return { error: { status: "CUSTOM_ERROR", error: fetchError.message } };
+
+        // Update each unread message
+        const updates = messages
+          .filter(message => !message.read_by[user.id]) // Only unread messages
+          .map(message => ({
+            id: message.id,
+            read_by: {
+              ...message.read_by,
+              [user.id]: new Date().toISOString()
+            }
+          }));
+
+        if (updates.length === 0) return { data: "No unread messages to mark" };
+
+        // Use RPC function for bulk update
+        const { error } = await supabase.rpc("mark_messages_as_read", {
+          message_updates: updates
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        return { data: "Conversation marked as read" };
+      },
+      invalidatesTags: (_result, _error, conversation_id) => [
+        { type: "Message", id: conversation_id },
+        "Conversation"
+      ],
+    }),
+
+    // Send typing indicator
+    setTypingStatus: builder.mutation<string, {
+      conversation_id: string;
+      is_typing: boolean;
+    }>({
+      queryFn: async ({ conversation_id, is_typing }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Use Supabase presence for typing status
+        const channel = supabase.channel(`typing:${conversation_id}`);
+        
+        if (is_typing) {
+          await channel.track({
+            user_id: user.id,
+            display_name: user.user_metadata?.display_name || "User",
+            typing: true,
+            timestamp: Date.now()
+          });
+        } else {
+          await channel.untrack();
+        }
+
+        return { data: is_typing ? "Typing status set" : "Typing status cleared" };
+      },
+    }),
+
+    // Get typing status for conversation
+    getTypingStatus: builder.query<Array<{
+      user_id: string;
+      display_name: string;
+      typing: boolean;
+    }>, string>({
+      queryFn: async (conversation_id) => {
+        const channel = supabase.channel(`typing:${conversation_id}`);
+        const presence = await channel.subscribe();
+        
+        // Get current presence state
+        const state = presence.presenceState();
+        const typingUsers = Object.values(state)
+          .flat()
+          .filter((user: any) => user.typing && Date.now() - user.timestamp < 5000); // 5 second timeout
+
+        return { data: typingUsers };
+      },
+    }),
+
+    // Send disappearing message (snap)
+    sendSnapMessage: builder.mutation<Message, {
+      conversation_id: string;
+      content?: string;
+      image_url?: string;
+      expires_in_seconds?: number;
+    }>({
+      queryFn: async ({ conversation_id, content, image_url, expires_in_seconds = 10 }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Calculate expiration time
+        const expiresAt = new Date();
+        expiresAt.setSeconds(expiresAt.getSeconds() + expires_in_seconds);
+
+        const { data, error } = await supabase
+          .from("messages")
+          .insert({
+            conversation_id,
+            sender_id: user.id,
+            content,
+            image_url,
+            message_type: "snap",
+            expires_at: expiresAt.toISOString()
+          })
+          .select(`
+            *,
+            sender:profiles (
+              id,
+              display_name,
+              avatar_url
+            )
+          `)
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        // Update conversation timestamp
+        await supabase
+          .from("conversations")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", conversation_id);
+
+        return { data };
+      },
+      invalidatesTags: (_result, _error, { conversation_id }) => [
+        { type: "Message", id: conversation_id },
+        "Conversation"
+      ],
+    }),
+
+    // Clean up expired messages
+    cleanupExpiredMessages: builder.mutation<string, void>({
+      queryFn: async () => {
+        const { error } = await supabase.rpc("cleanup_expired_messages");
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: "Expired messages cleaned up" };
+      },
+      invalidatesTags: ["Message", "Conversation"],
+    }),
+
+    // Seed demo data for single-device testing
+    seedDemoData: builder.mutation<string, void>({
+      queryFn: async () => {
+        const { error } = await supabase.rpc("seed_demo_data");
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: "Demo data seeded successfully" };
+      },
+      invalidatesTags: ["Profile", "Friend", "Conversation", "Message"],
+    }),
+
+
   }),
 });
 
@@ -467,6 +673,14 @@ export const {
   useCreateConversationMutation,
   useGetMessagesQuery,
   useSendMessageMutation,
+  useUploadPhotoMutation,
+  useSendPhotoMessageMutation,
+  useMarkMessageAsReadMutation,
+  useMarkConversationAsReadMutation,
+  useSetTypingStatusMutation,
+  useGetTypingStatusQuery,
+  useSendSnapMessageMutation,
+  useCleanupExpiredMessagesMutation,
   useResetDemoDataMutation,
-  useDebugConversationsQuery,
+  useSeedDemoDataMutation,
 } = apiSlice; 
