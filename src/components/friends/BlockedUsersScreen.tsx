@@ -42,7 +42,7 @@ function BlockedUserItem({ friend }: { friend: Friend }) {
           onPress: async () => {
             try {
               await unblockUser({ friend_id: friend.friend_id }).unwrap();
-              Alert.alert("Success", `${friend.friend.display_name} has been unblocked`);
+              Alert.alert("Success", `${friend.friend?.display_name} has been unblocked`);
             } catch (error) {
               Alert.alert("Error", "Failed to unblock user");
             }

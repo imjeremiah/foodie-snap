@@ -47,7 +47,7 @@ export default function ChatThreadScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [otherUserTyping, setOtherUserTyping] = useState(false);
   const [expiredMessages, setExpiredMessages] = useState<Set<string>>(new Set());
-  const typingTimeoutRef = useRef<NodeJS.Timeout>();
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const { data: messages = [], isLoading } = useGetMessagesQuery(id!);
   const [sendMessage, { isLoading: isSending }] = useSendMessageMutation();
@@ -180,7 +180,7 @@ export default function ChatThreadScreen() {
     
     typingTimeoutRef.current = setTimeout(() => {
       handleStopTyping();
-    }, 3000); // Stop typing after 3 seconds of inactivity
+    }, 3000) as unknown as NodeJS.Timeout; // Stop typing after 3 seconds of inactivity
   };
 
   /**
@@ -233,7 +233,7 @@ export default function ChatThreadScreen() {
     if (message.sender_id === user?.id) {
       // Check if other participants have read this message
       const readByOthers = Object.keys(message.read_by || {}).some(
-        userId => userId !== user.id
+        userId => userId !== user?.id
       );
       return readByOthers;
     }
@@ -416,8 +416,8 @@ export default function ChatThreadScreen() {
                   </View>
                   <View className="flex-row items-center space-x-1">
                     <View className="h-2 w-2 rounded-full bg-gray-400 animate-pulse" />
-                    <View className="h-2 w-2 rounded-full bg-gray-400 animate-pulse" style={{ animationDelay: "0.2s" }} />
-                    <View className="h-2 w-2 rounded-full bg-gray-400 animate-pulse" style={{ animationDelay: "0.4s" }} />
+                    <View className="h-2 w-2 rounded-full bg-gray-400 animate-pulse" />
+                    <View className="h-2 w-2 rounded-full bg-gray-400 animate-pulse" />
                     <Text className="ml-2 text-xs text-muted-foreground">typing...</Text>
                   </View>
                 </View>

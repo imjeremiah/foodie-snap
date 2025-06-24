@@ -41,7 +41,7 @@ export default function SignInScreen({ onSwitchToSignUp }: SignInScreenProps) {
     const { error } = await signIn(email, password);
     
     if (error) {
-      Alert.alert("Sign In Error", error.message);
+      Alert.alert("Sign In Error", (error as any)?.message || "An error occurred");
     }
   };
 

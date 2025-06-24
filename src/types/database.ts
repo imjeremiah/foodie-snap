@@ -23,6 +23,8 @@ export interface Friend {
   
   // Joined data from profiles table
   friend?: Profile;
+  user?: Profile; // For incoming requests
+  is_incoming_request?: boolean; // Flag to identify incoming requests
 }
 
 export interface Conversation {
@@ -30,6 +32,7 @@ export interface Conversation {
   created_by: string;
   created_at: string;
   updated_at: string;
+  archived_by?: string[]; // Array of user IDs who archived this conversation
   
   // Joined data
   participants?: ConversationParticipant[];
@@ -66,5 +69,7 @@ export interface Message {
 export interface ConversationWithDetails extends Conversation {
   other_participant: Profile;
   last_message_preview: string;
+  last_message_time: string;
   unread_count: number;
+  is_archived?: boolean; // Computed field based on current user
 } 

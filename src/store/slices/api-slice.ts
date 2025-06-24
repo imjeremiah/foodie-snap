@@ -29,55 +29,14 @@ const supabaseBaseQuery = fetchBaseQuery({
   },
 });
 
-/**
- * Custom base query that uses Supabase client directly
- */
-const supabaseQuery = async (args: any) => {
-  const { table, operation, select, filters, data, id } = args;
-
-  try {
-    let query = supabase.from(table);
-
-    switch (operation) {
-      case "select":
-        query = query.select(select || "*");
-        if (filters) {
-          Object.entries(filters).forEach(([key, value]) => {
-            query = query.eq(key, value);
-          });
-        }
-        break;
-      case "insert":
-        query = query.insert(data);
-        break;
-      case "update":
-        query = query.update(data);
-        if (id) query = query.eq("id", id);
-        break;
-      case "delete":
-        query = query.delete();
-        if (id) query = query.eq("id", id);
-        break;
-    }
-
-    const { data: result, error } = await query;
-
-    if (error) {
-      return { error: { status: "CUSTOM_ERROR", error: error.message, data: error } };
-    }
-
-    return { data: result };
-  } catch (error) {
-    return { error: { status: "FETCH_ERROR", error: String(error) } };
-  }
-};
+// Custom query function for direct Supabase operations
 
 /**
  * Main API slice for all database operations
  */
 export const apiSlice = createApi({
   reducerPath: "api",
-  baseQuery: supabaseQuery,
+  baseQuery: supabaseBaseQuery,
   tagTypes: ["Profile", "Friend", "Conversation", "Message"],
   endpoints: (builder) => ({
     // Profile endpoints
@@ -528,6 +487,21 @@ export const apiSlice = createApi({
             (m: any) => m.sender_id !== user.id && !(m.read_by || {})[user.id]
           ).length;
 
+          // Check if conversation is archived by current user
+          const isArchived = (conv.archived_by || []).includes(user.id);
+
+          // Generate appropriate preview text
+          let lastMessagePreview = "No messages yet";
+          if (lastMessage) {
+            if (lastMessage.message_type === 'image') {
+              lastMessagePreview = "📷 Photo";
+            } else if (lastMessage.message_type === 'snap') {
+              lastMessagePreview = "⚡ Snap";
+            } else {
+              lastMessagePreview = lastMessage.content || "Message";
+            }
+          }
+
           return {
             ...conv,
             other_participant: otherParticipant || {
@@ -539,9 +513,105 @@ export const apiSlice = createApi({
               created_at: "",
               updated_at: "",
             },
-            last_message_preview: lastMessage?.content || "No messages yet",
+            last_message_preview: lastMessagePreview,
             last_message_time: lastMessage?.created_at || conv.created_at,
             unread_count: unreadCount,
+            is_archived: isArchived,
+          };
+        });
+
+        // Filter out archived conversations by default (can be made configurable)
+        const activeConversations = transformedData.filter(conv => !conv.is_archived);
+        
+        return { data: activeConversations };
+      },
+      providesTags: ["Conversation"],
+    }),
+
+    getArchivedConversations: builder.query<ConversationWithDetails[], void>({
+      queryFn: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Get conversation IDs where user is a participant
+        const { data: participantData, error: participantError } = await supabase
+          .from("conversation_participants")
+          .select("conversation_id")
+          .eq("user_id", user.id);
+
+        if (participantError) return { error: { status: "CUSTOM_ERROR", error: participantError.message } };
+
+        if (!participantData || participantData.length === 0) {
+          return { data: [] };
+        }
+
+        const conversationIds = participantData.map(p => p.conversation_id);
+
+        // Get conversations with archived_by containing current user
+        const { data, error } = await supabase
+          .from("conversations")
+          .select(`
+            *,
+            participants:conversation_participants (
+              user_id,
+              profile:profiles (
+                id,
+                email,
+                display_name,
+                avatar_url
+              )
+            ),
+            messages (
+              id,
+              content,
+              created_at,
+              sender_id,
+              message_type
+            )
+          `)
+          .in("id", conversationIds)
+          .contains("archived_by", [user.id]) // Only archived conversations
+          .order("updated_at", { ascending: false });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        // Transform data similar to getConversations
+        const transformedData: ConversationWithDetails[] = (data || []).map(conv => {
+          const otherParticipant = conv.participants?.find(
+            (p: any) => p.user_id !== user.id
+          )?.profile;
+          
+          const lastMessage = conv.messages?.[conv.messages.length - 1];
+          const unreadCount = (conv.messages || []).filter(
+            (m: any) => m.sender_id !== user.id && !(m.read_by || {})[user.id]
+          ).length;
+
+          let lastMessagePreview = "No messages yet";
+          if (lastMessage) {
+            if (lastMessage.message_type === 'image') {
+              lastMessagePreview = "📷 Photo";
+            } else if (lastMessage.message_type === 'snap') {
+              lastMessagePreview = "⚡ Snap";
+            } else {
+              lastMessagePreview = lastMessage.content || "Message";
+            }
+          }
+
+          return {
+            ...conv,
+            other_participant: otherParticipant || {
+              id: "unknown",
+              email: "unknown@example.com",
+              display_name: "Unknown User",
+              avatar_url: null,
+              bio: null,
+              created_at: "",
+              updated_at: "",
+            },
+            last_message_preview: lastMessagePreview,
+            last_message_time: lastMessage?.created_at || conv.created_at,
+            unread_count: unreadCount,
+            is_archived: true,
           };
         });
 
@@ -555,7 +625,38 @@ export const apiSlice = createApi({
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
 
-        // Create conversation
+        // Check if conversation already exists between these users
+        const { data: existingConversations, error: checkError } = await supabase
+          .from("conversation_participants")
+          .select(`
+            conversation_id,
+            conversations!inner (
+              id,
+              created_by,
+              created_at
+            )
+          `)
+          .eq("user_id", user.id);
+
+        if (checkError) return { error: { status: "CUSTOM_ERROR", error: checkError.message } };
+
+        // Check if any of these conversations already include the target participant
+        for (const conv of existingConversations || []) {
+          const { data: otherParticipants, error: otherError } = await supabase
+            .from("conversation_participants")
+            .select("user_id")
+            .eq("conversation_id", conv.conversation_id)
+            .neq("user_id", user.id);
+
+          if (otherError) continue;
+
+          if (otherParticipants?.some(p => p.user_id === participant_id)) {
+            // Conversation already exists, return it
+            return { data: conv.conversations };
+          }
+        }
+
+        // Create new conversation
         const { data: conversation, error: convError } = await supabase
           .from("conversations")
           .insert({ created_by: user.id })
@@ -577,6 +678,110 @@ export const apiSlice = createApi({
         return { data: conversation };
       },
       invalidatesTags: ["Conversation"],
+    }),
+
+    deleteConversation: builder.mutation<string, string>({
+      queryFn: async (conversation_id) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // First, delete all messages in the conversation
+        const { error: messagesError } = await supabase
+          .from("messages")
+          .delete()
+          .eq("conversation_id", conversation_id);
+
+        if (messagesError) return { error: { status: "CUSTOM_ERROR", error: messagesError.message } };
+
+        // Then, delete conversation participants
+        const { error: participantsError } = await supabase
+          .from("conversation_participants")
+          .delete()
+          .eq("conversation_id", conversation_id);
+
+        if (participantsError) return { error: { status: "CUSTOM_ERROR", error: participantsError.message } };
+
+        // Finally, delete the conversation itself
+        const { error: conversationError } = await supabase
+          .from("conversations")
+          .delete()
+          .eq("id", conversation_id);
+
+        if (conversationError) return { error: { status: "CUSTOM_ERROR", error: conversationError.message } };
+
+        return { data: "Conversation deleted successfully" };
+      },
+      invalidatesTags: ["Conversation", "Message"],
+    }),
+
+    archiveConversation: builder.mutation<Conversation, { 
+      conversation_id: string; 
+      is_archived: boolean;
+    }>({
+      queryFn: async ({ conversation_id, is_archived }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // For now, we'll use a simple approach - add archived_by field to conversations table
+        // In a production app, you might want a separate user_conversation_settings table
+        const updateData = is_archived 
+          ? { archived_by: [user.id] } // Store as array to support per-user archiving
+          : { archived_by: [] };
+
+        const { data, error } = await supabase
+          .from("conversations")
+          .update(updateData)
+          .eq("id", conversation_id)
+          .select()
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        return { data };
+      },
+      invalidatesTags: ["Conversation"],
+    }),
+
+    leaveConversation: builder.mutation<string, string>({
+      queryFn: async (conversation_id) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Remove user from conversation participants
+        const { error: participantError } = await supabase
+          .from("conversation_participants")
+          .delete()
+          .eq("conversation_id", conversation_id)
+          .eq("user_id", user.id);
+
+        if (participantError) return { error: { status: "CUSTOM_ERROR", error: participantError.message } };
+
+        // Check if conversation has any remaining participants
+        const { data: remainingParticipants, error: checkError } = await supabase
+          .from("conversation_participants")
+          .select("user_id")
+          .eq("conversation_id", conversation_id);
+
+        if (checkError) return { error: { status: "CUSTOM_ERROR", error: checkError.message } };
+
+        // If no participants left, delete the entire conversation
+        if (!remainingParticipants || remainingParticipants.length === 0) {
+          // Delete messages first
+          await supabase
+            .from("messages")
+            .delete()
+            .eq("conversation_id", conversation_id);
+
+          // Delete conversation
+          await supabase
+            .from("conversations")
+            .delete()
+            .eq("id", conversation_id);
+        }
+
+        return { data: "Left conversation successfully" };
+      },
+      invalidatesTags: ["Conversation", "Message"],
     }),
 
     // Messages endpoints
@@ -830,23 +1035,15 @@ export const apiSlice = createApi({
       },
     }),
 
-    // Get typing status for conversation
+    // Get typing status for conversation (placeholder - handled via real-time subscriptions)
     getTypingStatus: builder.query<Array<{
       user_id: string;
       display_name: string;
       typing: boolean;
     }>, string>({
-      queryFn: async (conversation_id) => {
-        const channel = supabase.channel(`typing:${conversation_id}`);
-        const presence = await channel.subscribe();
-        
-        // Get current presence state
-        const state = presence.presenceState();
-        const typingUsers = Object.values(state)
-          .flat()
-          .filter((user: any) => user.typing && Date.now() - user.timestamp < 5000); // 5 second timeout
-
-        return { data: typingUsers };
+      queryFn: async () => {
+        // This is handled via real-time subscriptions in components
+        return { data: [] };
       },
     }),
 
@@ -954,4 +1151,8 @@ export const {
   useGetMutualFriendsQuery,
   useGetFriendSuggestionsQuery,
   useGetFriendshipStatusQuery,
+  useDeleteConversationMutation,
+  useArchiveConversationMutation,
+  useLeaveConversationMutation,
+  useGetArchivedConversationsQuery,
 } = apiSlice; 
