@@ -12,7 +12,11 @@ import type {
   Conversation, 
   ConversationWithDetails, 
   Message, 
-  ConversationParticipant 
+  ConversationParticipant,
+  UserStats,
+  CompleteUserStats,
+  UserPreferences,
+  BlockedUser
 } from "../../types/database";
 
 /**
@@ -70,6 +74,153 @@ export const apiSlice = createApi({
         return { data };
       },
       invalidatesTags: ["Profile"],
+    }),
+
+    // User Statistics endpoints
+    getUserStats: builder.query<CompleteUserStats, void>({
+      queryFn: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .rpc('get_user_complete_stats', { user_id_param: user.id });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data[0] || {} };
+      },
+      providesTags: ["Profile"],
+    }),
+
+    updateSnapStats: builder.mutation<void, void>({
+      queryFn: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { error } = await supabase
+          .rpc('update_snap_stats', { user_id_param: user.id });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: undefined };
+      },
+      invalidatesTags: ["Profile"],
+    }),
+
+    incrementUserStat: builder.mutation<void, { stat_name: string; increment_by?: number }>({
+      queryFn: async ({ stat_name, increment_by = 1 }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { error } = await supabase
+          .rpc('increment_user_stat', { 
+            user_id_param: user.id,
+            stat_name: stat_name,
+            increment_by: increment_by
+          });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: undefined };
+      },
+      invalidatesTags: ["Profile"],
+    }),
+
+    // User Preferences endpoints
+    getUserPreferences: builder.query<UserPreferences, void>({
+      queryFn: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .from("user_preferences")
+          .select("*")
+          .eq("user_id", user.id)
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      providesTags: ["Profile"],
+    }),
+
+    updateUserPreferences: builder.mutation<UserPreferences, Partial<UserPreferences> & { user_id: string }>({
+      queryFn: async ({ user_id, ...updates }) => {
+        const { data, error } = await supabase
+          .from("user_preferences")
+          .update(updates)
+          .eq("user_id", user_id)
+          .select()
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      invalidatesTags: ["Profile"],
+    }),
+
+    // User Blocking endpoints
+    getBlockedUsers: builder.query<BlockedUser[], void>({
+      queryFn: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .from("blocked_users")
+          .select(`
+            *,
+            blocked_profile:blocked_id (
+              id,
+              email,
+              display_name,
+              avatar_url
+            )
+          `)
+          .eq("blocker_id", user.id);
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || [] };
+      },
+      providesTags: ["Friend"],
+    }),
+
+    blockUserAdvanced: builder.mutation<void, { user_id: string; reason?: string }>({
+      queryFn: async ({ user_id, reason }) => {
+        const { error } = await supabase
+          .rpc('block_user', { 
+            target_user_id: user_id,
+            reason_text: reason || null
+          });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: undefined };
+      },
+      invalidatesTags: ["Friend", "Conversation"],
+    }),
+
+    unblockUserAdvanced: builder.mutation<void, { user_id: string }>({
+      queryFn: async ({ user_id }) => {
+        const { error } = await supabase
+          .rpc('unblock_user', { target_user_id: user_id });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: undefined };
+      },
+      invalidatesTags: ["Friend"],
+    }),
+
+    isUserBlocked: builder.query<boolean, string>({
+      queryFn: async (user_id) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .rpc('is_user_blocked', { 
+            blocker_id_param: user.id,
+            blocked_id_param: user_id
+          });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || false };
+      },
+      providesTags: ["Friend"],
     }),
 
     // Friends endpoints
@@ -1126,6 +1277,15 @@ export const apiSlice = createApi({
 export const {
   useGetCurrentProfileQuery,
   useUpdateProfileMutation,
+  useGetUserStatsQuery,
+  useUpdateSnapStatsMutation,
+  useIncrementUserStatMutation,
+  useGetUserPreferencesQuery,
+  useUpdateUserPreferencesMutation,
+  useGetBlockedUsersQuery,
+  useBlockUserAdvancedMutation,
+  useUnblockUserAdvancedMutation,
+  useIsUserBlockedQuery,
   useGetFriendsQuery,
   useSendFriendRequestMutation,
   useAcceptFriendRequestMutation,

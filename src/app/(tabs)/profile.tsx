@@ -11,6 +11,7 @@ import { useSession } from "../../hooks/use-session";
 import { 
   useGetCurrentProfileQuery, 
   useGetFriendsQuery,
+  useGetUserStatsQuery,
   useAcceptFriendRequestMutation,
   useRejectFriendRequestMutation,
   useRemoveFriendMutation,
@@ -21,6 +22,7 @@ export default function ProfileScreen() {
   const { user, signOut, loading } = useSession();
   const { data: profile } = useGetCurrentProfileQuery();
   const { data: friends = [], isLoading: friendsLoading } = useGetFriendsQuery();
+  const { data: userStats, isLoading: statsLoading } = useGetUserStatsQuery();
   const [acceptFriendRequest] = useAcceptFriendRequestMutation();
   const [rejectFriendRequest] = useRejectFriendRequestMutation();
   const [removeFriend] = useRemoveFriendMutation();
@@ -134,11 +136,19 @@ export default function ProfileScreen() {
   const renderFriendItem = (friend: any) => (
     <View key={friend.id} className="flex-row items-center rounded-lg border border-border bg-card p-4">
       {/* Avatar */}
-      <View className="h-12 w-12 items-center justify-center rounded-full bg-primary">
-        <Text className="text-lg font-bold text-primary-foreground">
-          {friend.friend?.display_name?.charAt(0) || "?"}
-        </Text>
-      </View>
+      {friend.friend?.avatar_url ? (
+        <Image
+          source={{ uri: friend.friend.avatar_url }}
+          className="h-12 w-12 rounded-full"
+          style={{ backgroundColor: '#f0f0f0' }}
+        />
+      ) : (
+        <View className="h-12 w-12 items-center justify-center rounded-full bg-primary">
+          <Text className="text-lg font-bold text-primary-foreground">
+            {friend.friend?.display_name?.charAt(0) || "?"}
+          </Text>
+        </View>
+      )}
 
       {/* Friend info */}
       <View className="ml-3 flex-1">
@@ -228,11 +238,19 @@ export default function ProfileScreen() {
         <View className="mb-6 rounded-lg border border-border bg-card p-6 shadow-lg">
           {/* Avatar and basic info */}
           <View className="flex-row items-center">
-            <View className="h-20 w-20 items-center justify-center rounded-full bg-primary">
-              <Text className="text-2xl font-bold text-primary-foreground">
-                {user?.email?.charAt(0).toUpperCase() || "?"}
-              </Text>
-            </View>
+            {profile?.avatar_url ? (
+              <Image
+                source={{ uri: profile.avatar_url }}
+                className="h-20 w-20 rounded-full"
+                style={{ backgroundColor: '#f0f0f0' }}
+              />
+            ) : (
+              <View className="h-20 w-20 items-center justify-center rounded-full bg-primary">
+                <Text className="text-2xl font-bold text-primary-foreground">
+                  {profile?.display_name?.charAt(0) || user?.email?.charAt(0).toUpperCase() || "?"}
+                </Text>
+              </View>
+            )}
             
             <View className="ml-4 flex-1">
               <Text className="text-xl font-bold text-foreground">
@@ -261,18 +279,24 @@ export default function ProfileScreen() {
           {/* Stats */}
           <View className="mt-4 flex-row justify-around border-t border-border pt-4">
             <View className="items-center">
-              <Text className="text-lg font-bold text-foreground">0</Text>
-              <Text className="text-xs text-muted-foreground">Snaps</Text>
+              <Text className="text-lg font-bold text-foreground">
+                {statsLoading ? "..." : (userStats?.snap_score || 0)}
+              </Text>
+              <Text className="text-xs text-muted-foreground">Snap Score</Text>
             </View>
             <View className="items-center">
               <Text className="text-lg font-bold text-foreground">
-                {friendsLoading ? "..." : friends.filter(f => f.status === 'accepted').length}
+                {friendsLoading || statsLoading ? "..." : (userStats?.friends_count || 0)}
               </Text>
               <Text className="text-xs text-muted-foreground">Friends</Text>
             </View>
             <View className="items-center">
-              <Text className="text-lg font-bold text-foreground">0</Text>
-              <Text className="text-xs text-muted-foreground">Streak</Text>
+              <Text className="text-lg font-bold text-foreground">
+                {statsLoading ? "..." : (userStats?.current_streak || 0)}
+              </Text>
+              <Text className="text-xs text-muted-foreground">
+                🔥 {userStats?.current_streak && userStats.current_streak > 0 ? 'Streak' : 'Streak'}
+              </Text>
             </View>
           </View>
         </View>
@@ -348,17 +372,22 @@ export default function ProfileScreen() {
 
         {/* Account Actions */}
         <View className="mb-8 space-y-3">
-          <TouchableOpacity className="flex-row items-center rounded-lg border border-border bg-card p-4">
+          <TouchableOpacity 
+            className="flex-row items-center rounded-lg border border-border bg-card p-4"
+            onPress={() => router.push("/edit-profile")}
+          >
             <Ionicons name="pencil-outline" size={20} color="gray" />
             <Text className="ml-3 font-medium text-foreground">Edit Profile</Text>
+            <View className="flex-1" />
+            <Ionicons name="chevron-forward" size={16} color="gray" />
           </TouchableOpacity>
 
           <TouchableOpacity 
             className="flex-row items-center rounded-lg border border-border bg-card p-4"
-            onPress={() => router.push("/friends/privacy")}
+            onPress={() => router.push("/privacy-settings")}
           >
             <Ionicons name="shield-outline" size={20} color="gray" />
-            <Text className="ml-3 font-medium text-foreground">Privacy Settings</Text>
+            <Text className="ml-3 font-medium text-foreground">Privacy & Settings</Text>
             <View className="flex-1" />
             <Ionicons name="chevron-forward" size={16} color="gray" />
           </TouchableOpacity>

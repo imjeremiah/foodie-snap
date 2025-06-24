@@ -88,14 +88,5 @@ FROM public.conversations c;
 -- Grant access to the view
 GRANT SELECT ON conversation_details TO authenticated;
 
--- Add RLS policy for the view
-CREATE POLICY "Users can view their conversation details" ON conversation_details
-FOR SELECT USING (
-  id IN (
-    SELECT conversation_id FROM public.conversation_participants 
-    WHERE user_id = auth.uid()
-  )
-);
-
--- Enable RLS on the view
-ALTER VIEW conversation_details ENABLE ROW LEVEL SECURITY; 
+-- Note: RLS is handled by the underlying conversations table
+-- Views inherit RLS from their underlying tables 

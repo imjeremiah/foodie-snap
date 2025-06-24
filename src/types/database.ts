@@ -9,8 +9,102 @@ export interface Profile {
   display_name: string | null;
   avatar_url: string | null;
   bio: string | null;
+  snap_score?: number;
+  current_streak?: number;
+  longest_streak?: number;
+  last_snap_date?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface UserStats {
+  id: string;
+  user_id: string;
+  snaps_sent: number;
+  snaps_received: number;
+  photos_shared: number;
+  messages_sent: number;
+  friends_added: number;
+  stories_posted: number;
+  total_reactions_given: number;
+  total_reactions_received: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompleteUserStats {
+  snap_score: number;
+  current_streak: number;
+  longest_streak: number;
+  last_snap_date: string | null;
+  snaps_sent: number;
+  snaps_received: number;
+  photos_shared: number;
+  messages_sent: number;
+  friends_count: number;
+  friends_added: number;
+  stories_posted: number;
+  total_reactions_given: number;
+  total_reactions_received: number;
+}
+
+export interface UserPreferences {
+  id: string;
+  user_id: string;
+  
+  // Notification Settings
+  push_notifications_enabled: boolean;
+  message_notifications: boolean;
+  friend_request_notifications: boolean;
+  story_notifications: boolean;
+  group_notifications: boolean;
+  reaction_notifications: boolean;
+  mention_notifications: boolean;
+  
+  // Privacy Settings
+  allow_friend_requests: boolean;
+  discoverable_by_email: boolean;
+  discoverable_by_username: boolean;
+  show_mutual_friends: boolean;
+  show_friends_count: boolean;
+  show_last_seen: boolean;
+  profile_visibility: 'public' | 'friends' | 'private';
+  
+  // App Behavior Settings
+  auto_save_to_journal: boolean;
+  auto_download_media: boolean;
+  read_receipts_enabled: boolean;
+  typing_indicators_enabled: boolean;
+  screenshot_notifications: boolean;
+  
+  // Display Settings
+  dark_mode_enabled: boolean;
+  reduce_motion: boolean;
+  high_contrast: boolean;
+  font_size: 'small' | 'medium' | 'large' | 'extra_large';
+  
+  // Content Settings
+  mature_content_filter: boolean;
+  auto_play_videos: boolean;
+  data_saver_mode: boolean;
+  
+  // Language and Region
+  language_code: string;
+  timezone: string;
+  
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BlockedUser {
+  id: string;
+  blocker_id: string;
+  blocked_id: string;
+  reason: string | null;
+  created_at: string;
+  
+  // Joined data
+  blocked_profile?: Profile;
 }
 
 export interface Friend {

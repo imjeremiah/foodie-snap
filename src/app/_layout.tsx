@@ -32,6 +32,20 @@ export default function RootLayout() {
               gestureEnabled: true 
             }} 
           />
+          <Stack.Screen 
+            name="edit-profile" 
+            options={{ 
+              presentation: "modal",
+              gestureEnabled: true 
+            }} 
+          />
+          <Stack.Screen 
+            name="privacy-settings" 
+            options={{ 
+              presentation: "card",
+              gestureEnabled: true 
+            }} 
+          />
         </Stack>
       </AuthWrapper>
     </Provider>
