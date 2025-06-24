@@ -93,13 +93,16 @@ export default function CameraScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-black">
+    <View className="flex-1 bg-black">
+      {/* Camera View */}
       <CameraView 
         className="flex-1" 
         facing={facing} 
         ref={cameraRef}
-      >
-        {/* Camera UI Overlay */}
+      />
+      
+      {/* Absolutely positioned UI overlay */}
+      <SafeAreaView className="absolute inset-0 flex-1">
         <View className="flex-1 justify-between">
           {/* Top bar with app title */}
           <View className="flex-row items-center justify-center pt-4">
@@ -134,7 +137,7 @@ export default function CameraScreen() {
             </View>
           </View>
         </View>
-      </CameraView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
