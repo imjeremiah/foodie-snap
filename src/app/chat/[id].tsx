@@ -3,7 +3,7 @@
  * Shows conversation history with chat bubbles and provides text input for new messages.
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   Image,
   Dimensions,
   Alert,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -34,6 +35,7 @@ import {
   subscribeToTypingIndicators,
   unsubscribeFromTypingIndicators,
 } from "../../lib/realtime";
+import SnapViewer from "../../components/messaging/SnapViewer";
 
 export default function ChatThreadScreen() {
   const router = useRouter();
@@ -47,6 +49,8 @@ export default function ChatThreadScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [otherUserTyping, setOtherUserTyping] = useState(false);
   const [expiredMessages, setExpiredMessages] = useState<Set<string>>(new Set());
+  const [showSnapViewer, setShowSnapViewer] = useState(false);
+  const [snapViewerData, setSnapViewerData] = useState<{ snaps: any[]; initialIndex: number } | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const { data: messages = [], isLoading } = useGetMessagesQuery(id!);
@@ -219,6 +223,35 @@ export default function ChatThreadScreen() {
   };
 
   /**
+   * Handle snap tap to open snap viewer
+   */
+  const handleSnapTap = useCallback((tappedMessage: any) => {
+    if (tappedMessage.message_type !== 'snap') return;
+    
+    // Get all snap messages in this conversation for sequence viewing
+    const snapMessages = messages.filter(msg => 
+      msg.message_type === 'snap' && 
+      !expiredMessages.has(msg.id) &&
+      (!msg.expires_at || new Date(msg.expires_at) > new Date())
+    );
+    
+    const initialIndex = snapMessages.findIndex(snap => snap.id === tappedMessage.id);
+    
+    if (initialIndex >= 0) {
+      setSnapViewerData({ snaps: snapMessages, initialIndex });
+      setShowSnapViewer(true);
+    }
+  }, [messages, expiredMessages]);
+
+  /**
+   * Handle snap viewer close
+   */
+  const handleSnapViewerClose = useCallback(() => {
+    setShowSnapViewer(false);
+    setSnapViewerData(null);
+  }, []);
+
+  /**
    * Format timestamp for display
    */
   const formatTime = (timestamp: string) => {
@@ -275,7 +308,7 @@ export default function ChatThreadScreen() {
       >
         <View className={`max-w-[80%] ${isMe ? "items-end" : "items-start"}`}>
           {/* Message bubble */}
-          <View
+          <TouchableOpacity
             className={`rounded-2xl ${
               isImage ? "overflow-hidden p-0" : "px-4 py-3"
             } ${
@@ -283,6 +316,8 @@ export default function ChatThreadScreen() {
                 ? `rounded-br-md ${isSnap ? 'bg-purple-500' : 'bg-primary'}`
                 : `rounded-bl-md ${isSnap ? 'bg-purple-100' : 'bg-muted'}`
             }`}
+            onPress={() => isSnap ? handleSnapTap(message) : undefined}
+            disabled={!isSnap}
           >
             {isImage ? (
               <Image
@@ -312,7 +347,7 @@ export default function ChatThreadScreen() {
                 )}
               </View>
             )}
-          </View>
+          </TouchableOpacity>
           
           {/* Timestamp and read status */}
           <View className="mt-1 flex-row items-center space-x-1">
@@ -485,6 +520,22 @@ export default function ChatThreadScreen() {
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Snap Viewer Modal */}
+      <Modal
+        visible={showSnapViewer}
+        animationType="fade"
+        presentationStyle="fullScreen"
+      >
+        {snapViewerData && (
+          <SnapViewer
+            snaps={snapViewerData.snaps}
+            initialIndex={snapViewerData.initialIndex}
+            onClose={handleSnapViewerClose}
+            currentUserId={user?.id || ''}
+          />
+        )}
+      </Modal>
     </SafeAreaView>
   );
 } 

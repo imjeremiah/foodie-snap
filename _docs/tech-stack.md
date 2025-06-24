@@ -15,7 +15,7 @@ This document outlines the complete technology stack for the FoodieSnap project.
 - **Functional Components**: Exclusively use functional components with React Hooks. Avoid class-based components.
 - **TypeScript**: Use TypeScript for all new code to ensure type safety and improve developer experience.
 - **Performance**: For all lists of data (feeds, chat, etc.), use `FlashList` from Shopify for optimal performance and memory usage, falling back to `FlatList` only if necessary.
-- **Native APIs**: Leverage Expo's modules (e.g., `expo-camera`, `expo-notifications`, `expo-av`) for accessing native device features whenever possible.
+- **Native APIs**: Leverage Expo's modules (e.g., `expo-camera`, `expo-notifications`, `expo-video`, `expo-audio`) for accessing native device features whenever possible.
 - **Builds & Updates**: Use Expo Application Services (EAS) for all builds, submissions, and over-the-air (OTA) updates.
 
 #### Limitations & Pitfalls

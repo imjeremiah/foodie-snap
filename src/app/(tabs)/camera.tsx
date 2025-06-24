@@ -164,12 +164,11 @@ export default function CameraScreen() {
           }
           return newDuration;
         });
-      }, 1000);
+      }, 1000) as unknown as NodeJS.Timeout;
 
       // Start recording
       const video = await cameraRef.current.recordAsync({
         maxDuration: 60, // 60 seconds max
-        quality: '720p',
       });
 
       if (video) {

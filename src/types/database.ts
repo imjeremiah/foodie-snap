@@ -155,6 +155,12 @@ export interface Message {
   expires_at: string | null;
   read_by: Record<string, string>; // user_id -> timestamp
   
+  // Enhanced snap viewing fields (Phase 2.1 Step 10)
+  viewed_by?: Record<string, { timestamp: string; replay_count: number; first_viewed_at: string }>; // user_id -> view data
+  screenshot_by?: Record<string, string>; // user_id -> timestamp when screenshot was taken
+  max_replays?: number; // How many times this snap can be replayed (default 1)
+  viewing_duration?: number; // How long the snap should be displayed in seconds (default 5)
+  
   // Joined data
   sender?: Profile;
 }

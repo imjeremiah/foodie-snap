@@ -1789,6 +1789,171 @@ export const apiSlice = createApi({
       ],
     }),
 
+    // Snap Viewing endpoints for Phase 2.1 Step 10
+    canViewSnap: builder.query<{
+      can_view: boolean;
+      is_first_view: boolean;
+      replay_count: number;
+      max_replays: number;
+      viewing_duration: number;
+      error?: string;
+    }, {
+      message_id: string;
+      viewer_id: string;
+    }>({
+      queryFn: async ({ message_id, viewer_id }) => {
+        const { data, error } = await supabase.rpc('can_view_snap', {
+          message_id_param: message_id,
+          viewer_id_param: viewer_id
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      providesTags: (_result, _error, { message_id }) => [
+        { type: "Message", id: message_id }
+      ],
+    }),
+
+    recordSnapView: builder.mutation<{
+      success: boolean;
+      replay_count: number;
+      can_replay: boolean;
+      error?: string;
+    }, {
+      message_id: string;
+      viewer_id: string;
+    }>({
+      queryFn: async ({ message_id, viewer_id }) => {
+        const { data, error } = await supabase.rpc('record_snap_view', {
+          message_id_param: message_id,
+          viewer_id_param: viewer_id
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      invalidatesTags: (_result, _error, { message_id }) => [
+        { type: "Message", id: message_id },
+        "Message"
+      ],
+    }),
+
+    recordScreenshot: builder.mutation<void, {
+      message_id: string;
+      screenshotter_id: string;
+    }>({
+      queryFn: async ({ message_id, screenshotter_id }) => {
+        const { error } = await supabase.rpc('record_screenshot', {
+          message_id_param: message_id,
+          screenshotter_id_param: screenshotter_id
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: undefined };
+      },
+      invalidatesTags: (_result, _error, { message_id }) => [
+        { type: "Message", id: message_id }
+      ],
+    }),
+
+    getScreenshotNotifications: builder.query<Array<{
+      message_id: string;
+      conversation_id: string;
+      content_preview: string;
+      screenshot_by: string;
+      screenshot_at: string;
+      screenshotter_name: string;
+    }>, void>({
+      queryFn: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase.rpc('get_screenshot_notifications', {
+          user_id_param: user.id
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || [] };
+      },
+      providesTags: ["Message"],
+    }),
+
+    // Enhanced snap sending with viewing duration and replay settings
+    sendSnapMessageEnhanced: builder.mutation<Message, {
+      conversation_id: string;
+      content?: string;
+      imageUri?: string;
+      viewing_duration?: number; // 3-10 seconds
+      max_replays?: number; // Default 1
+      expires_in_seconds?: number; // When the snap expires completely
+      options?: PhotoUploadOptions;
+    }>({
+      queryFn: async ({
+        conversation_id,
+        content,
+        imageUri,
+        viewing_duration = 5,
+        max_replays = 1,
+        expires_in_seconds = 86400, // 24 hours default
+        options
+      }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        let image_url = null;
+        
+        // Upload image if provided
+        if (imageUri) {
+          const uploadResult = await uploadPhoto(imageUri, options);
+          if (!uploadResult.success) {
+            return { error: { status: "CUSTOM_ERROR", error: uploadResult.error || "Upload failed" } };
+          }
+          image_url = uploadResult.data!.fullUrl;
+        }
+
+        // Calculate expiration time
+        const expires_at = new Date(Date.now() + expires_in_seconds * 1000).toISOString();
+
+        // Insert snap message
+        const { data, error } = await supabase
+          .from("messages")
+          .insert({
+            conversation_id,
+            sender_id: user.id,
+            content: content || null,
+            image_url,
+            message_type: "snap",
+            expires_at,
+            viewing_duration,
+            max_replays,
+          })
+          .select(`
+            *,
+            sender:profiles (
+              id,
+              display_name,
+              avatar_url
+            )
+          `)
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        // Update conversation timestamp
+        await supabase
+          .from("conversations")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", conversation_id);
+
+        // Update user stats
+        await supabase.rpc('update_snap_stats', { user_id_param: user.id });
+
+        return { data };
+      },
+      invalidatesTags: ["Message", "Conversation"],
+    }),
+
 
   }),
 });
@@ -1854,4 +2019,10 @@ export const {
   useGetUserSpotlightPostsQuery,
   useDeleteSpotlightPostMutation,
   useUpdateSpotlightPostMutation,
+  // Snap viewing hooks
+  useCanViewSnapQuery,
+  useRecordSnapViewMutation,
+  useRecordScreenshotMutation,
+  useGetScreenshotNotificationsQuery,
+  useSendSnapMessageEnhancedMutation,
 } = apiSlice; 
