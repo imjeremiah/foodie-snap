@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef } from "react";
-import { View, Text, TouchableOpacity, Alert } from "react-native";
+import { View, Text, TouchableOpacity, Alert, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
@@ -93,51 +93,127 @@ export default function CameraScreen() {
   }
 
   return (
-    <View className="flex-1 bg-black">
-      {/* Camera View */}
+    <View style={styles.container}>
+      {/* Camera View - Full screen */}
       <CameraView 
-        className="flex-1" 
+        style={styles.camera}
         facing={facing} 
         ref={cameraRef}
       />
       
-      {/* Absolutely positioned UI overlay */}
-      <SafeAreaView className="absolute inset-0 flex-1">
-        <View className="flex-1 justify-between">
+      {/* UI Overlay */}
+      <View style={styles.overlay}>
+        <SafeAreaView style={styles.safeArea}>
           {/* Top bar with app title */}
-          <View className="flex-row items-center justify-center pt-4">
-            <Text className="text-lg font-bold text-white">
+          <View style={styles.topBar}>
+            <Text style={styles.title}>
               📸 FoodieSnap
             </Text>
           </View>
 
           {/* Bottom controls */}
-          <View className="pb-8">
-            <View className="flex-row items-center justify-center px-8">
+          <View style={styles.bottomControls}>
+            <View style={styles.controlsRow}>
               {/* Flip camera button */}
               <TouchableOpacity
-                className="h-12 w-12 items-center justify-center rounded-full bg-black/30"
+                style={styles.flipButton}
                 onPress={toggleCameraFacing}
               >
                 <Ionicons name="camera-reverse" size={24} color="white" />
               </TouchableOpacity>
 
               {/* Capture button */}
-              <View className="flex-1 items-center">
+              <View style={styles.captureContainer}>
                 <TouchableOpacity
-                  className="h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-white"
+                  style={styles.captureButton}
                   onPress={takePicture}
                 >
-                  <View className="h-16 w-16 rounded-full bg-white" />
+                  <View style={styles.captureInner} />
                 </TouchableOpacity>
               </View>
 
               {/* Placeholder for future features */}
-              <View className="h-12 w-12" />
+              <View style={styles.placeholder} />
             </View>
           </View>
-        </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </View>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: 'black',
+  },
+  camera: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flex: 1,
+  },
+  safeArea: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 16,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  bottomControls: {
+    paddingBottom: 32,
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  flipButton: {
+    height: 48,
+    width: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 24,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  captureContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  captureButton: {
+    height: 80,
+    width: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 40,
+    borderWidth: 4,
+    borderColor: 'white',
+    backgroundColor: 'white',
+  },
+  captureInner: {
+    height: 64,
+    width: 64,
+    borderRadius: 32,
+    backgroundColor: 'white',
+  },
+  placeholder: {
+    height: 48,
+    width: 48,
+  },
+});
