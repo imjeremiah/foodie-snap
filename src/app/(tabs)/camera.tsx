@@ -1,25 +1,30 @@
 /**
  * @file Camera screen - the central hub of the FoodieSnap application.
- * Provides camera functionality for capturing photos with permissions handling.
+ * Provides camera functionality for capturing photos and recording videos with permissions handling.
  */
 
 import React, { useState, useRef } from "react";
-import { View, Text, TouchableOpacity, Alert, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, Alert, StyleSheet, Animated } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
+import { CameraView, CameraType, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
 export default function CameraScreen() {
   const [facing, setFacing] = useState<CameraType>("back");
-  const [permission, requestPermission] = useCameraPermissions();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
   const cameraRef = useRef<CameraView>(null);
   const router = useRouter();
+  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingAnimValue = useRef(new Animated.Value(1)).current;
 
   /**
    * Handle camera permission request
    */
-  if (!permission) {
+  if (!cameraPermission) {
     // Camera permissions are still loading
     return (
       <SafeAreaView className="flex-1 bg-background">
@@ -34,7 +39,7 @@ export default function CameraScreen() {
     );
   }
 
-  if (!permission.granted) {
+  if (!cameraPermission.granted) {
     // Camera permissions are not granted yet
     return (
       <SafeAreaView className="flex-1 bg-background">
@@ -48,7 +53,7 @@ export default function CameraScreen() {
             </Text>
             <TouchableOpacity
               className="rounded-md bg-primary px-4 py-3"
-              onPress={requestPermission}
+              onPress={requestCameraPermission}
             >
               <Text className="text-center font-semibold text-primary-foreground">
                 Grant Camera Permission
@@ -59,6 +64,23 @@ export default function CameraScreen() {
       </SafeAreaView>
     );
   }
+
+  /**
+   * Check microphone permissions for video recording
+   */
+  const checkMicrophonePermission = async (): Promise<boolean> => {
+    if (!microphonePermission) {
+      const permission = await requestMicrophonePermission();
+      return permission.granted;
+    }
+    
+    if (!microphonePermission.granted) {
+      const permission = await requestMicrophonePermission();
+      return permission.granted;
+    }
+    
+    return true;
+  };
 
   /**
    * Toggle between front and back camera
@@ -82,13 +104,143 @@ export default function CameraScreen() {
           // Navigate to preview screen with photo URI
           router.push({
             pathname: "/preview",
-            params: { imageUri: photo.uri },
+            params: { 
+              mediaUri: photo.uri,
+              mediaType: 'photo'
+            },
           });
         }
       } catch (error) {
         Alert.alert("Error", "Failed to capture photo. Please try again.");
         console.error("Camera capture error:", error);
       }
+    }
+  }
+
+  /**
+   * Start video recording
+   */
+  async function startVideoRecording() {
+    if (!cameraRef.current || isRecording) return;
+
+    // Check microphone permission
+    const hasMicPermission = await checkMicrophonePermission();
+    if (!hasMicPermission) {
+      Alert.alert(
+        "Microphone Permission Required",
+        "Video recording requires microphone access for audio.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    try {
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      // Start pulsing animation
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(recordingAnimValue, {
+            toValue: 0.6,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(recordingAnimValue, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+
+      // Start recording timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(prev => {
+          const newDuration = prev + 1;
+          // Auto-stop at 60 seconds
+          if (newDuration >= 60) {
+            stopVideoRecording();
+          }
+          return newDuration;
+        });
+      }, 1000);
+
+      // Start recording
+      const video = await cameraRef.current.recordAsync({
+        maxDuration: 60, // 60 seconds max
+        quality: '720p',
+      });
+
+      if (video) {
+        // Navigate to preview screen with video URI
+        router.push({
+          pathname: "/preview",
+          params: { 
+            mediaUri: video.uri,
+            mediaType: 'video'
+          },
+        });
+      }
+    } catch (error) {
+      setIsRecording(false);
+      setRecordingDuration(0);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+      recordingAnimValue.stopAnimation();
+      recordingAnimValue.setValue(1);
+      
+      Alert.alert("Error", "Failed to start video recording. Please try again.");
+      console.error("Video recording error:", error);
+    }
+  }
+
+  /**
+   * Stop video recording
+   */
+  async function stopVideoRecording() {
+    if (!cameraRef.current || !isRecording) return;
+
+    try {
+      await cameraRef.current.stopRecording();
+      setIsRecording(false);
+      setRecordingDuration(0);
+      
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+      
+      // Stop animation
+      recordingAnimValue.stopAnimation();
+      recordingAnimValue.setValue(1);
+    } catch (error) {
+      console.error("Stop recording error:", error);
+    }
+  }
+
+  /**
+   * Format recording duration for display
+   */
+  function formatDuration(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  /**
+   * Handle press in (start recording)
+   */
+  function handlePressIn() {
+    startVideoRecording();
+  }
+
+  /**
+   * Handle press out (stop recording)
+   */
+  function handlePressOut() {
+    if (isRecording) {
+      stopVideoRecording();
     }
   }
 
@@ -99,17 +251,35 @@ export default function CameraScreen() {
         style={styles.camera}
         facing={facing} 
         ref={cameraRef}
+        mode="video"
       />
       
       {/* UI Overlay */}
       <View style={styles.overlay}>
         <SafeAreaView style={styles.safeArea}>
-          {/* Top bar with app title */}
+          {/* Top bar with app title and recording indicator */}
           <View style={styles.topBar}>
             <Text style={styles.title}>
               📸 FoodieSnap
             </Text>
+            {isRecording && (
+              <View style={styles.recordingIndicator}>
+                <View style={styles.recordingDot} />
+                <Text style={styles.recordingText}>
+                  REC {formatDuration(recordingDuration)}
+                </Text>
+              </View>
+            )}
           </View>
+
+          {/* Instructions */}
+          {!isRecording && (
+            <View style={styles.instructionsContainer}>
+              <Text style={styles.instructionsText}>
+                Tap for photo • Hold for video
+              </Text>
+            </View>
+          )}
 
           {/* Bottom controls */}
           <View style={styles.bottomControls}>
@@ -118,6 +288,7 @@ export default function CameraScreen() {
               <TouchableOpacity
                 style={styles.flipButton}
                 onPress={toggleCameraFacing}
+                disabled={isRecording}
               >
                 <Ionicons name="camera-reverse" size={24} color="white" />
               </TouchableOpacity>
@@ -125,10 +296,22 @@ export default function CameraScreen() {
               {/* Capture button */}
               <View style={styles.captureContainer}>
                 <TouchableOpacity
-                  style={styles.captureButton}
+                  style={[
+                    styles.captureButton,
+                    isRecording && styles.captureButtonRecording
+                  ]}
                   onPress={takePicture}
+                  onPressIn={handlePressIn}
+                  onPressOut={handlePressOut}
+                  disabled={isRecording && recordingDuration < 1} // Prevent immediate stop
                 >
-                  <View style={styles.captureInner} />
+                  <Animated.View 
+                    style={[
+                      styles.captureInner,
+                      isRecording && styles.captureInnerRecording,
+                      { transform: [{ scale: recordingAnimValue }] }
+                    ]} 
+                  />
                 </TouchableOpacity>
               </View>
 
@@ -169,11 +352,50 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingTop: 16,
+    position: 'relative',
   },
   title: {
     fontSize: 18,
     fontWeight: 'bold',
     color: 'white',
+  },
+  recordingIndicator: {
+    position: 'absolute',
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 0, 0, 0.8)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'white',
+    marginRight: 6,
+  },
+  recordingText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  instructionsContainer: {
+    position: 'absolute',
+    top: '50%',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  instructionsText: {
+    color: 'white',
+    fontSize: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    textAlign: 'center',
   },
   bottomControls: {
     paddingBottom: 32,
@@ -206,11 +428,21 @@ const styles = StyleSheet.create({
     borderColor: 'white',
     backgroundColor: 'white',
   },
+  captureButtonRecording: {
+    borderColor: '#ff0000',
+    backgroundColor: '#ff0000',
+  },
   captureInner: {
     height: 64,
     width: 64,
     borderRadius: 32,
     backgroundColor: 'white',
+  },
+  captureInnerRecording: {
+    backgroundColor: '#ff0000',
+    borderRadius: 8,
+    width: 24,
+    height: 24,
   },
   placeholder: {
     height: 48,

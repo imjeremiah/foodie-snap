@@ -5,7 +5,17 @@
 
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import { supabase } from "../../lib/supabase";
-import { uploadPhoto, PhotoUploadOptions, PhotoUploadResult } from "../../lib/storage";
+import { 
+  uploadPhoto, 
+  uploadVideo, 
+  uploadMedia, 
+  PhotoUploadOptions, 
+  VideoUploadOptions,
+  MediaUploadOptions,
+  PhotoUploadResult,
+  VideoUploadResult,
+  MediaUploadResult 
+} from "../../lib/storage";
 import type { 
   Profile, 
   Friend, 
@@ -1031,30 +1041,83 @@ export const apiSlice = createApi({
       },
     }),
 
-    // Send photo message endpoint
+    // Send media message endpoint (photos and videos)
     sendPhotoMessage: builder.mutation<Message, {
       conversation_id: string;
       imageUri: string;
-      options?: PhotoUploadOptions;
+      mediaType?: 'photo' | 'video';
+      options?: MediaUploadOptions;
     }>({
-      queryFn: async ({ conversation_id, imageUri, options }) => {
+      queryFn: async ({ conversation_id, imageUri, mediaType = 'photo', options }) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
 
-        // First upload the photo
-        const uploadResult = await uploadPhoto(imageUri, options);
+        // First upload the media
+        const uploadResult = await uploadMedia(imageUri, mediaType, options);
         if (!uploadResult.success) {
-          return { error: { status: "CUSTOM_ERROR", error: uploadResult.error || "Photo upload failed" } };
+          return { error: { status: "CUSTOM_ERROR", error: uploadResult.error || `${mediaType} upload failed` } };
         }
 
-        // Then create the message with the photo URL
+        // Then create the message with the media URL
         const { data, error } = await supabase
           .from("messages")
           .insert({
             conversation_id,
             sender_id: user.id,
             image_url: uploadResult.data!.fullUrl,
-            message_type: "image"
+            message_type: mediaType === 'video' ? "video" : "image"
+          })
+          .select(`
+            *,
+            sender:profiles (
+              id,
+              display_name,
+              avatar_url
+            )
+          `)
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        // Update conversation timestamp
+        await supabase
+          .from("conversations")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", conversation_id);
+
+        return { data };
+      },
+      invalidatesTags: (_result, _error, { conversation_id }) => [
+        { type: "Message", id: conversation_id },
+        "Conversation"
+      ],
+    }),
+
+    // Send media message endpoint (alias for better naming)
+    sendMediaMessage: builder.mutation<Message, {
+      conversation_id: string;
+      mediaUri: string;
+      mediaType: 'photo' | 'video';
+      options?: MediaUploadOptions;
+    }>({
+      queryFn: async ({ conversation_id, mediaUri, mediaType, options }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // First upload the media
+        const uploadResult = await uploadMedia(mediaUri, mediaType, options);
+        if (!uploadResult.success) {
+          return { error: { status: "CUSTOM_ERROR", error: uploadResult.error || `${mediaType} upload failed` } };
+        }
+
+        // Then create the message with the media URL
+        const { data, error } = await supabase
+          .from("messages")
+          .insert({
+            conversation_id,
+            sender_id: user.id,
+            image_url: uploadResult.data!.fullUrl,
+            message_type: mediaType === 'video' ? "video" : "image"
           })
           .select(`
             *,
@@ -1294,7 +1357,7 @@ export const apiSlice = createApi({
       shared_to_story?: boolean;
       shared_to_spotlight?: boolean;
       tags?: string[];
-      options?: PhotoUploadOptions;
+      options?: MediaUploadOptions;
     }>({
       queryFn: async ({ 
         imageUri, 
@@ -1310,7 +1373,7 @@ export const apiSlice = createApi({
         if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
 
         // First upload the photo/video
-        const uploadResult = await uploadPhoto(imageUri, options);
+        const uploadResult = await uploadMedia(imageUri, content_type, options);
         if (!uploadResult.success) {
           return { error: { status: "CUSTOM_ERROR", error: uploadResult.error || "Upload failed" } };
         }
@@ -1752,6 +1815,7 @@ export const {
   useSendMessageMutation,
   useUploadPhotoMutation,
   useSendPhotoMessageMutation,
+  useSendMediaMessageMutation,
   useMarkMessageAsReadMutation,
   useMarkConversationAsReadMutation,
   useSetTypingStatusMutation,

@@ -1,6 +1,6 @@
 /**
- * @file Preview screen - displays captured photo with action buttons.
- * Shows the captured image and provides Send/Discard functionality.
+ * @file Preview screen - displays captured photo or video with action buttons.
+ * Shows the captured media and provides Send/Discard functionality for both photos and videos.
  */
 
 import React, { useState } from "react";
@@ -17,12 +17,18 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { Video, ResizeMode } from "expo-av";
 import { useGetConversationsQuery, useSendPhotoMessageMutation, useSaveToJournalMutation } from "../store/slices/api-slice";
 import type { ConversationWithDetails } from "../types/database";
 
+type MediaType = 'photo' | 'video';
+
 export default function PreviewScreen() {
   const router = useRouter();
-  const { imageUri } = useLocalSearchParams<{ imageUri: string }>();
+  const { mediaUri, mediaType = 'photo' } = useLocalSearchParams<{ 
+    mediaUri: string; 
+    mediaType: string;
+  }>();
   
   // State for send modal and journal saving
   const [showSendModal, setShowSendModal] = useState(false);
@@ -34,13 +40,16 @@ export default function PreviewScreen() {
   const [sendPhotoMessage] = useSendPhotoMessageMutation();
   const [saveToJournal] = useSaveToJournalMutation();
 
+  // Determine if this is a video
+  const isVideo = mediaType === 'video';
+
   /**
    * Handle discard action - return to camera
    */
   const handleDiscard = () => {
     Alert.alert(
-      "Discard Photo",
-      "Are you sure you want to discard this photo?",
+      `Discard ${isVideo ? 'Video' : 'Photo'}`,
+      `Are you sure you want to discard this ${isVideo ? 'video' : 'photo'}?`,
       [
         { text: "Cancel", style: "cancel" },
         { 
@@ -59,7 +68,7 @@ export default function PreviewScreen() {
     if (conversations.length === 0) {
       Alert.alert(
         "No Conversations",
-        "You need to have at least one conversation to send photos. Start a conversation first!",
+        `You need to have at least one conversation to send ${isVideo ? 'videos' : 'photos'}. Start a conversation first!`,
         [{ text: "OK" }]
       );
       return;
@@ -68,30 +77,31 @@ export default function PreviewScreen() {
   };
 
   /**
-   * Send photo to a specific conversation
+   * Send media to a specific conversation
    */
   const sendToConversation = async (conversation: ConversationWithDetails) => {
-    if (!imageUri) return;
+    if (!mediaUri) return;
 
     setSending(true);
     try {
       await sendPhotoMessage({
         conversation_id: conversation.id,
-        imageUri,
+        imageUri: mediaUri,
+        mediaType: mediaType as 'photo' | 'video',
         options: { quality: 0.8 }
       }).unwrap();
 
       Alert.alert(
-        "Photo Sent!",
-        `Photo sent to ${conversation.other_participant.display_name || 'your friend'}`,
+        `${isVideo ? 'Video' : 'Photo'} Sent!`,
+        `${isVideo ? 'Video' : 'Photo'} sent to ${conversation.other_participant.display_name || 'your friend'}`,
         [{ text: "OK", onPress: () => router.back() }]
       );
       setShowSendModal(false);
     } catch (error) {
-      console.error("Failed to send photo:", error);
+      console.error(`Failed to send ${mediaType}:`, error);
       Alert.alert(
         "Send Failed",
-        "Failed to send photo. Please try again.",
+        `Failed to send ${isVideo ? 'video' : 'photo'}. Please try again.`,
         [{ text: "OK" }]
       );
     } finally {
@@ -102,27 +112,27 @@ export default function PreviewScreen() {
   /**
    * Handle saving to journal
    */
-  const handleSaveToJournal = async () => {
-    if (!imageUri) return;
+      const handleSaveToJournal = async () => {
+    if (!mediaUri) return;
 
     setSavingToJournal(true);
     try {
       await saveToJournal({
-        imageUri,
-        content_type: 'photo',
+        imageUri: mediaUri,
+        content_type: mediaType as 'photo' | 'video',
         options: { quality: 0.8 }
       }).unwrap();
 
       Alert.alert(
         "Saved to Journal!",
-        "Your photo has been saved to your journal.",
+        `Your ${isVideo ? 'video' : 'photo'} has been saved to your journal.`,
         [{ text: "OK" }]
       );
     } catch (error) {
-      console.error("Failed to save to journal:", error);
+      console.error(`Failed to save ${mediaType} to journal:`, error);
       Alert.alert(
         "Save Failed",
-        "Failed to save photo to journal. Please try again.",
+        `Failed to save ${isVideo ? 'video' : 'photo'} to journal. Please try again.`,
         [{ text: "OK" }]
       );
     } finally {
@@ -137,16 +147,16 @@ export default function PreviewScreen() {
     router.back();
   };
 
-  if (!imageUri) {
+  if (!mediaUri) {
     return (
       <SafeAreaView className="flex-1 bg-background">
         <View className="flex-1 items-center justify-center px-4">
           <View className="rounded-lg border border-border bg-card p-6 shadow-lg">
             <Text className="text-center text-xl font-semibold text-foreground">
-              No Image Found
+              No Media Found
             </Text>
             <Text className="mt-2 text-center text-muted-foreground">
-              Please go back and take a photo
+              Please go back and capture a photo or video
             </Text>
             <TouchableOpacity
               className="mt-4 rounded-md bg-primary px-4 py-3"
@@ -173,18 +183,31 @@ export default function PreviewScreen() {
           >
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
-          <Text className="text-lg font-bold text-white">Preview</Text>
+          <Text className="text-lg font-bold text-white">
+            {isVideo ? 'Video Preview' : 'Photo Preview'}
+          </Text>
           <View className="h-10 w-10" />
         </View>
       </View>
 
-      {/* Image display */}
+      {/* Media display */}
       <View className="flex-1 items-center justify-center">
-        <Image
-          source={{ uri: imageUri }}
-          className="h-full w-full"
-          resizeMode="contain"
-        />
+        {isVideo ? (
+          <Video
+            source={{ uri: mediaUri }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode={ResizeMode.CONTAIN}
+            shouldPlay={true}
+            isLooping={true}
+            useNativeControls={true}
+          />
+        ) : (
+          <Image
+            source={{ uri: mediaUri }}
+            className="h-full w-full"
+            resizeMode="contain"
+          />
+        )}
       </View>
 
       {/* Bottom action buttons */}
@@ -255,7 +278,9 @@ export default function PreviewScreen() {
               <TouchableOpacity onPress={() => setShowSendModal(false)}>
                 <Text className="text-primary">Cancel</Text>
               </TouchableOpacity>
-              <Text className="text-lg font-semibold text-foreground">Send Photo</Text>
+              <Text className="text-lg font-semibold text-foreground">
+                Send {isVideo ? 'Video' : 'Photo'}
+              </Text>
               <View className="w-12" />
             </View>
 
@@ -273,7 +298,7 @@ export default function PreviewScreen() {
                     No Conversations
                   </Text>
                   <Text className="mt-2 text-center text-muted-foreground">
-                    Start a conversation from the Chat tab to send photos
+                    Start a conversation from the Chat tab to send {isVideo ? 'videos' : 'photos'}
                   </Text>
                 </View>
               ) : (
