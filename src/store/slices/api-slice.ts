@@ -205,6 +205,269 @@ export const apiSlice = createApi({
       invalidatesTags: ["Friend"],
     }),
 
+    // Reject friend request
+    rejectFriendRequest: builder.mutation<string, { id: string }>({
+      queryFn: async ({ id }) => {
+        const { error } = await supabase
+          .from("friends")
+          .delete()
+          .eq("id", id);
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: "Friend request rejected" };
+      },
+      invalidatesTags: ["Friend"],
+    }),
+
+    // Remove friend (delete friendship both ways)
+    removeFriend: builder.mutation<string, { friend_id: string }>({
+      queryFn: async ({ friend_id }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Remove both directions of the friendship
+        const { error: error1 } = await supabase
+          .from("friends")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("friend_id", friend_id);
+
+        if (error1) return { error: { status: "CUSTOM_ERROR", error: error1.message } };
+
+        const { error: error2 } = await supabase
+          .from("friends")
+          .delete()
+          .eq("user_id", friend_id)
+          .eq("friend_id", user.id);
+
+        if (error2) return { error: { status: "CUSTOM_ERROR", error: error2.message } };
+
+        return { data: "Friend removed successfully" };
+      },
+      invalidatesTags: ["Friend", "Conversation"],
+    }),
+
+    // Block user
+    blockUser: builder.mutation<Friend, { friend_id: string }>({
+      queryFn: async ({ friend_id }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Update existing friendship to blocked or create new blocked relationship
+        const { data, error } = await supabase
+          .from("friends")
+          .upsert({
+            user_id: user.id,
+            friend_id,
+            status: "blocked"
+          })
+          .select()
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      invalidatesTags: ["Friend", "Conversation"],
+    }),
+
+    // Unblock user
+    unblockUser: builder.mutation<string, { friend_id: string }>({
+      queryFn: async ({ friend_id }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { error } = await supabase
+          .from("friends")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("friend_id", friend_id)
+          .eq("status", "blocked");
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: "User unblocked successfully" };
+      },
+      invalidatesTags: ["Friend"],
+    }),
+
+    // Search users by username or email
+    searchUsers: builder.query<Profile[], string>({
+      queryFn: async (searchTerm) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        if (!searchTerm || searchTerm.trim().length < 2) {
+          return { data: [] };
+        }
+
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .or(`display_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
+          .neq("id", user.id) // Exclude current user
+          .limit(20);
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || [] };
+      },
+    }),
+
+    // Get mutual friends between current user and another user
+    getMutualFriends: builder.query<Profile[], string>({
+      queryFn: async (user_id) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Get friends of current user (accepted only)
+        const { data: myFriends, error: myError } = await supabase
+          .from("friends")
+          .select("friend_id")
+          .eq("user_id", user.id)
+          .eq("status", "accepted");
+
+        if (myError) return { error: { status: "CUSTOM_ERROR", error: myError.message } };
+
+        // Get friends of other user (accepted only)
+        const { data: theirFriends, error: theirError } = await supabase
+          .from("friends")
+          .select("friend_id")
+          .eq("user_id", user_id)
+          .eq("status", "accepted");
+
+        if (theirError) return { error: { status: "CUSTOM_ERROR", error: theirError.message } };
+
+        // Find mutual friends
+        const myFriendIds = new Set(myFriends?.map(f => f.friend_id) || []);
+        const mutualFriendIds = theirFriends?.filter(f => myFriendIds.has(f.friend_id)).map(f => f.friend_id) || [];
+
+        if (mutualFriendIds.length === 0) {
+          return { data: [] };
+        }
+
+        // Get profiles of mutual friends
+        const { data: mutualProfiles, error: profileError } = await supabase
+          .from("profiles")
+          .select("*")
+          .in("id", mutualFriendIds);
+
+        if (profileError) return { error: { status: "CUSTOM_ERROR", error: profileError.message } };
+        return { data: mutualProfiles || [] };
+      },
+      providesTags: ["Friend"],
+    }),
+
+    // Get friend suggestions based on mutual connections
+    getFriendSuggestions: builder.query<Array<Profile & { mutual_friends_count: number }>, void>({
+      queryFn: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Get current friends
+        const { data: currentFriends, error: friendsError } = await supabase
+          .from("friends")
+          .select("friend_id")
+          .eq("user_id", user.id)
+          .in("status", ["accepted", "pending", "blocked"]);
+
+        if (friendsError) return { error: { status: "CUSTOM_ERROR", error: friendsError.message } };
+
+        const friendIds = new Set([user.id, ...(currentFriends?.map(f => f.friend_id) || [])]);
+
+        // Get friends of friends (potential suggestions)
+        const { data: friendsOfFriends, error: fofError } = await supabase
+          .from("friends")
+          .select(`
+            friend_id,
+            user_id,
+            friend:friend_id (
+              id,
+              email,
+              display_name,
+              avatar_url,
+              bio
+            )
+          `)
+          .in("user_id", Array.from(currentFriends?.map(f => f.friend_id) || []))
+          .eq("status", "accepted");
+
+        if (fofError) return { error: { status: "CUSTOM_ERROR", error: fofError.message } };
+
+        // Count mutual friends for each suggestion
+        const suggestionCounts = new Map<string, number>();
+        const suggestions = new Map<string, Profile>();
+
+        friendsOfFriends?.forEach((fof: any) => {
+          if (!friendIds.has(fof.friend_id) && fof.friend) {
+            suggestions.set(fof.friend_id, fof.friend);
+            suggestionCounts.set(fof.friend_id, (suggestionCounts.get(fof.friend_id) || 0) + 1);
+          }
+        });
+
+        // Convert to array and sort by mutual friends count
+        const suggestionsArray = Array.from(suggestions.values())
+          .map(profile => ({
+            ...profile,
+            mutual_friends_count: suggestionCounts.get(profile.id) || 0
+          }))
+          .sort((a, b) => b.mutual_friends_count - a.mutual_friends_count)
+          .slice(0, 10); // Limit to top 10 suggestions
+
+        return { data: suggestionsArray };
+      },
+      providesTags: ["Friend"],
+    }),
+
+    // Check friendship status with another user
+    getFriendshipStatus: builder.query<{
+      status: 'none' | 'pending_sent' | 'pending_received' | 'accepted' | 'blocked';
+      friendship_id?: string;
+    }, string>({
+      queryFn: async (user_id) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Check if there's a friendship from current user to target user
+        const { data: outgoing, error: outgoingError } = await supabase
+          .from("friends")
+          .select("id, status")
+          .eq("user_id", user.id)
+          .eq("friend_id", user_id)
+          .maybeSingle();
+
+        if (outgoingError) return { error: { status: "CUSTOM_ERROR", error: outgoingError.message } };
+
+        if (outgoing) {
+          return { 
+            data: { 
+              status: outgoing.status === 'pending' ? 'pending_sent' : outgoing.status as any,
+              friendship_id: outgoing.id
+            } 
+          };
+        }
+
+        // Check if there's a friendship from target user to current user
+        const { data: incoming, error: incomingError } = await supabase
+          .from("friends")
+          .select("id, status")
+          .eq("user_id", user_id)
+          .eq("friend_id", user.id)
+          .maybeSingle();
+
+        if (incomingError) return { error: { status: "CUSTOM_ERROR", error: incomingError.message } };
+
+        if (incoming) {
+          return { 
+            data: { 
+              status: incoming.status === 'pending' ? 'pending_received' : incoming.status as any,
+              friendship_id: incoming.id
+            } 
+          };
+        }
+
+        return { data: { status: 'none' } };
+      },
+      providesTags: ["Friend"],
+    }),
+
     // Conversations endpoints
     getConversations: builder.query<ConversationWithDetails[], void>({
       queryFn: async () => {
@@ -683,4 +946,12 @@ export const {
   useCleanupExpiredMessagesMutation,
   useResetDemoDataMutation,
   useSeedDemoDataMutation,
+  useRejectFriendRequestMutation,
+  useRemoveFriendMutation,
+  useBlockUserMutation,
+  useUnblockUserMutation,
+  useSearchUsersQuery,
+  useGetMutualFriendsQuery,
+  useGetFriendSuggestionsQuery,
+  useGetFriendshipStatusQuery,
 } = apiSlice; 

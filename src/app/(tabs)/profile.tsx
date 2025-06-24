@@ -6,11 +6,15 @@
 import { View, Text, TouchableOpacity, Alert, ScrollView, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { useSession } from "../../hooks/use-session";
 import { 
   useGetCurrentProfileQuery, 
   useGetFriendsQuery,
-  useAcceptFriendRequestMutation 
+  useAcceptFriendRequestMutation,
+  useRejectFriendRequestMutation,
+  useRemoveFriendMutation,
+  useBlockUserMutation
 } from "../../store/slices/api-slice";
 
 export default function ProfileScreen() {
@@ -18,6 +22,9 @@ export default function ProfileScreen() {
   const { data: profile } = useGetCurrentProfileQuery();
   const { data: friends = [], isLoading: friendsLoading } = useGetFriendsQuery();
   const [acceptFriendRequest] = useAcceptFriendRequestMutation();
+  const [rejectFriendRequest] = useRejectFriendRequestMutation();
+  const [removeFriend] = useRemoveFriendMutation();
+  const [blockUser] = useBlockUserMutation();
 
   /**
    * Handle sign out with confirmation
@@ -46,18 +53,78 @@ export default function ProfileScreen() {
    * Handle friend request action
    */
   const handleFriendAction = async (friend: any, action: string) => {
-    if (action === "Accept" && friend.is_incoming_request && friend.status === "pending") {
-      try {
-        await acceptFriendRequest({ id: friend.id }).unwrap();
-        Alert.alert("Success", `${friend.friend?.display_name} is now your friend!`);
-      } catch (error) {
-        Alert.alert("Error", "Failed to accept friend request");
+    try {
+      switch (action) {
+        case "Accept":
+          if (friend.is_incoming_request && friend.status === "pending") {
+            await acceptFriendRequest({ id: friend.id }).unwrap();
+            Alert.alert("Success", `${friend.friend?.display_name} is now your friend!`);
+          }
+          break;
+        case "Reject":
+          if (friend.is_incoming_request && friend.status === "pending") {
+            Alert.alert(
+              "Reject Friend Request",
+              `Are you sure you want to reject ${friend.friend?.display_name}'s friend request?`,
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Reject",
+                  style: "destructive",
+                  onPress: async () => {
+                    await rejectFriendRequest({ id: friend.id }).unwrap();
+                    Alert.alert("Success", "Friend request rejected");
+                  }
+                }
+              ]
+            );
+          }
+          break;
+        case "Remove":
+          if (friend.status === "accepted") {
+            Alert.alert(
+              "Remove Friend",
+              `Are you sure you want to remove ${friend.friend?.display_name} as a friend?`,
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Remove",
+                  style: "destructive",
+                  onPress: async () => {
+                    await removeFriend({ friend_id: friend.friend_id }).unwrap();
+                    Alert.alert("Success", `${friend.friend?.display_name} has been removed from your friends`);
+                  }
+                }
+              ]
+            );
+          }
+          break;
+        case "Block":
+          Alert.alert(
+            "Block User",
+            `Are you sure you want to block ${friend.friend?.display_name}?`,
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Block",
+                style: "destructive",
+                onPress: async () => {
+                  await blockUser({ friend_id: friend.friend_id }).unwrap();
+                  Alert.alert("Success", `${friend.friend?.display_name} has been blocked`);
+                }
+              }
+            ]
+          );
+          break;
+        case "Message":
+          // Navigate to chat with this friend
+          router.push(`/chat/${friend.friend_id}`);
+          break;
+        default:
+          break;
       }
-    } else {
-      Alert.alert(
-        `${action} Friend`,
-        `${action} ${friend.friend?.display_name || friend.display_name} will be implemented in the next phase!`
-      );
+    } catch (error) {
+      Alert.alert("Error", "Failed to perform action. Please try again.");
     }
   };
 
@@ -88,20 +155,61 @@ export default function ProfileScreen() {
         )}
       </View>
 
-      {/* Action button */}
-      <TouchableOpacity
-        className={`rounded-md px-3 py-2 ${
-          (friend.status === "pending" && friend.is_incoming_request) ? "bg-orange-500" : "bg-primary"
-        }`}
-        onPress={() => handleFriendAction(
-          friend, 
-          (friend.status === "pending" && friend.is_incoming_request) ? "Accept" : "Message"
+      {/* Action buttons */}
+      <View className="flex-row items-center space-x-2">
+        {/* Accept/Reject buttons for incoming requests */}
+        {friend.status === "pending" && friend.is_incoming_request && (
+          <>
+            <TouchableOpacity
+              className="rounded-md bg-red-500 px-2 py-1"
+              onPress={() => handleFriendAction(friend, "Reject")}
+            >
+              <Text className="text-xs font-medium text-white">Reject</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="rounded-md bg-green-500 px-3 py-1"
+              onPress={() => handleFriendAction(friend, "Accept")}
+            >
+              <Text className="text-xs font-medium text-white">Accept</Text>
+            </TouchableOpacity>
+          </>
         )}
-      >
-        <Text className="text-sm font-medium text-white">
-          {(friend.status === "pending" && friend.is_incoming_request) ? "Accept" : "Message"}
-        </Text>
-      </TouchableOpacity>
+        
+        {/* Message button for accepted friends */}
+        {friend.status === "accepted" && (
+          <>
+            <TouchableOpacity
+              className="rounded-md bg-primary px-3 py-1"
+              onPress={() => handleFriendAction(friend, "Message")}
+            >
+              <Text className="text-xs font-medium text-primary-foreground">Message</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="rounded-md bg-muted p-1"
+              onPress={() => {
+                Alert.alert(
+                  "Friend Options",
+                  `Choose an action for ${friend.friend?.display_name}`,
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Remove Friend", onPress: () => handleFriendAction(friend, "Remove") },
+                    { text: "Block", style: "destructive", onPress: () => handleFriendAction(friend, "Block") }
+                  ]
+                );
+              }}
+            >
+              <Ionicons name="ellipsis-horizontal" size={16} color="gray" />
+            </TouchableOpacity>
+          </>
+        )}
+        
+        {/* Pending outgoing request */}
+        {friend.status === "pending" && !friend.is_incoming_request && (
+          <TouchableOpacity className="rounded-md bg-muted px-3 py-1" disabled>
+            <Text className="text-xs font-medium text-muted-foreground">Pending</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 
@@ -173,10 +281,16 @@ export default function ProfileScreen() {
         <View className="mb-6">
           <View className="mb-4 flex-row items-center justify-between">
             <Text className="text-lg font-bold text-foreground">Friends</Text>
-            <TouchableOpacity className="rounded-md bg-primary px-3 py-2">
-              <Text className="text-sm font-medium text-primary-foreground">
-                Add Friend
-              </Text>
+            <TouchableOpacity 
+              className="rounded-md bg-primary px-3 py-2"
+              onPress={() => router.push("/friends/search")}
+            >
+              <View className="flex-row items-center space-x-1">
+                <Ionicons name="person-add" size={16} color="white" />
+                <Text className="text-sm font-medium text-primary-foreground">
+                  Add Friend
+                </Text>
+              </View>
             </TouchableOpacity>
           </View>
 
@@ -185,14 +299,49 @@ export default function ProfileScreen() {
               <View className="rounded-lg border border-border bg-card p-4">
                 <Text className="text-center text-muted-foreground">Loading friends...</Text>
               </View>
-            ) : friends.length > 0 ? (
-              friends.map(renderFriendItem)
             ) : (
-              <View className="rounded-lg border border-border bg-card p-4">
-                <Text className="text-center text-muted-foreground">
-                  No friends yet. Add some friends to get started!
-                </Text>
-              </View>
+              <>
+                {/* Incoming Friend Requests */}
+                {friends.filter(f => f.status === 'pending' && f.is_incoming_request).length > 0 && (
+                  <View className="rounded-lg border border-border bg-card">
+                    <View className="border-b border-border p-3">
+                      <Text className="font-semibold text-foreground">Friend Requests</Text>
+                    </View>
+                    {friends.filter(f => f.status === 'pending' && f.is_incoming_request).map(renderFriendItem)}
+                  </View>
+                )}
+
+                {/* Current Friends */}
+                {friends.filter(f => f.status === 'accepted').length > 0 && (
+                  <View className="rounded-lg border border-border bg-card">
+                    <View className="border-b border-border p-3">
+                      <Text className="font-semibold text-foreground">
+                        Friends ({friends.filter(f => f.status === 'accepted').length})
+                      </Text>
+                    </View>
+                    {friends.filter(f => f.status === 'accepted').map(renderFriendItem)}
+                  </View>
+                )}
+
+                {/* Outgoing Friend Requests */}
+                {friends.filter(f => f.status === 'pending' && !f.is_incoming_request).length > 0 && (
+                  <View className="rounded-lg border border-border bg-card">
+                    <View className="border-b border-border p-3">
+                      <Text className="font-semibold text-foreground">Sent Requests</Text>
+                    </View>
+                    {friends.filter(f => f.status === 'pending' && !f.is_incoming_request).map(renderFriendItem)}
+                  </View>
+                )}
+
+                {/* Empty State */}
+                {friends.length === 0 && (
+                  <View className="rounded-lg border border-border bg-card p-4">
+                    <Text className="text-center text-muted-foreground">
+                      No friends yet. Add some friends to get started!
+                    </Text>
+                  </View>
+                )}
+              </>
             )}
           </View>
         </View>
@@ -204,9 +353,14 @@ export default function ProfileScreen() {
             <Text className="ml-3 font-medium text-foreground">Edit Profile</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity className="flex-row items-center rounded-lg border border-border bg-card p-4">
+          <TouchableOpacity 
+            className="flex-row items-center rounded-lg border border-border bg-card p-4"
+            onPress={() => router.push("/friends/privacy")}
+          >
             <Ionicons name="shield-outline" size={20} color="gray" />
             <Text className="ml-3 font-medium text-foreground">Privacy Settings</Text>
+            <View className="flex-1" />
+            <Ionicons name="chevron-forward" size={16} color="gray" />
           </TouchableOpacity>
 
           <TouchableOpacity
