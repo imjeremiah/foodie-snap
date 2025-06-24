@@ -150,7 +150,7 @@ export interface Message {
   sender_id: string;
   content: string | null;
   image_url: string | null;
-  message_type: 'text' | 'image' | 'snap';
+  message_type: 'text' | 'image' | 'snap' | 'system';
   created_at: string;
   expires_at: string | null;
   read_by: Record<string, string>; // user_id -> timestamp
@@ -206,6 +206,8 @@ export interface ConversationWithDetails extends Conversation {
   last_message_time: string;
   unread_count: number;
   is_archived?: boolean; // Computed field based on current user
+  conversation_type?: 'individual' | 'group';
+  participant_count?: number;
 }
 
 export interface SpotlightPost {

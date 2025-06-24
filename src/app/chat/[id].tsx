@@ -27,6 +27,7 @@ import {
   useSetTypingStatusMutation,
   useSendSnapMessageMutation,
   useCleanupExpiredMessagesMutation,
+  useGetConversationParticipantsQuery,
 } from "../../store/slices/api-slice";
 import { useSession } from "../../hooks/use-session";
 import { 
@@ -36,13 +37,15 @@ import {
   unsubscribeFromTypingIndicators,
 } from "../../lib/realtime";
 import SnapViewer from "../../components/messaging/SnapViewer";
+import GroupManagementModal from "../../components/conversation/GroupManagementModal";
 
 export default function ChatThreadScreen() {
   const router = useRouter();
   const { user } = useSession();
-  const { id, participantName } = useLocalSearchParams<{
+  const { id, participantName, isGroup } = useLocalSearchParams<{
     id: string;
     participantName: string;
+    isGroup?: string;
   }>();
   
   const [messageText, setMessageText] = useState("");
@@ -51,9 +54,13 @@ export default function ChatThreadScreen() {
   const [expiredMessages, setExpiredMessages] = useState<Set<string>>(new Set());
   const [showSnapViewer, setShowSnapViewer] = useState(false);
   const [snapViewerData, setSnapViewerData] = useState<{ snaps: any[]; initialIndex: number } | null>(null);
+  const [showGroupManagement, setShowGroupManagement] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const { data: messages = [], isLoading } = useGetMessagesQuery(id!);
+  const { data: participants = [] } = useGetConversationParticipantsQuery(id!, {
+    skip: !id || isGroup !== "true"
+  });
   const [sendMessage, { isLoading: isSending }] = useSendMessageMutation();
   const [markConversationAsRead] = useMarkConversationAsReadMutation();
   const [setTypingStatus] = useSetTypingStatusMutation();
@@ -402,26 +409,48 @@ export default function ChatThreadScreen() {
             <Ionicons name="arrow-back" size={24} color="gray" />
           </TouchableOpacity>
           
-          <View className="h-10 w-10 items-center justify-center rounded-full bg-primary">
-            <Text className="font-bold text-primary-foreground">
-              {participantName?.charAt(0) || "?"}
-            </Text>
+          <View className={`h-10 w-10 items-center justify-center rounded-full ${
+            isGroup === "true" ? "bg-green-500" : "bg-primary"
+          }`}>
+            {isGroup === "true" ? (
+              <Ionicons name="people" size={20} color="white" />
+            ) : (
+              <Text className="font-bold text-primary-foreground">
+                {participantName?.charAt(0) || "?"}
+              </Text>
+            )}
           </View>
           
           <View className="ml-3 flex-1">
             <Text className="font-semibold text-foreground">
               {participantName || "Unknown User"}
             </Text>
-            <Text className="text-xs text-green-500">Online</Text>
+            <Text className="text-xs text-muted-foreground">
+              {isGroup === "true" && participants.length > 0 
+                ? `${participants.length} participants`
+                : "Online"
+              }
+            </Text>
           </View>
           
-          <TouchableOpacity className="h-10 w-10 items-center justify-center rounded-full">
-            <Ionicons name="videocam-outline" size={24} color="gray" />
-          </TouchableOpacity>
-          
-          <TouchableOpacity className="ml-2 h-10 w-10 items-center justify-center rounded-full">
-            <Ionicons name="call-outline" size={24} color="gray" />
-          </TouchableOpacity>
+          {isGroup === "true" ? (
+            <TouchableOpacity 
+              className="h-10 w-10 items-center justify-center rounded-full"
+              onPress={() => setShowGroupManagement(true)}
+            >
+              <Ionicons name="information-circle-outline" size={24} color="gray" />
+            </TouchableOpacity>
+          ) : (
+            <>
+              <TouchableOpacity className="h-10 w-10 items-center justify-center rounded-full">
+                <Ionicons name="videocam-outline" size={24} color="gray" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity className="ml-2 h-10 w-10 items-center justify-center rounded-full">
+                <Ionicons name="call-outline" size={24} color="gray" />
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
         {/* Messages List */}
@@ -536,6 +565,16 @@ export default function ChatThreadScreen() {
           />
         )}
       </Modal>
+
+      {/* Group Management Modal */}
+      {isGroup === "true" && (
+        <GroupManagementModal
+          visible={showGroupManagement}
+          onClose={() => setShowGroupManagement(false)}
+          conversationId={id!}
+          groupName={participantName || "Group Chat"}
+        />
+      )}
     </SafeAreaView>
   );
 } 

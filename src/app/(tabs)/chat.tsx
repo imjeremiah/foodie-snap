@@ -173,13 +173,26 @@ export default function ChatScreen() {
         className="flex-1 flex-row items-center px-4 py-4"
         onPress={() => handleChatPress(conversation)}
       >
-        {/* Avatar with online indicator */}
+        {/* Avatar with group indicator */}
         <View className="relative">
-          <View className="h-14 w-14 items-center justify-center rounded-full bg-primary">
-            <Text className="text-lg font-bold text-primary-foreground">
-              {conversation.other_participant.display_name?.charAt(0) || "?"}
-            </Text>
+          <View className={`h-14 w-14 items-center justify-center rounded-full ${
+            conversation.conversation_type === 'group' ? 'bg-green-500' : 'bg-primary'
+          }`}>
+            {conversation.conversation_type === 'group' ? (
+              <Ionicons name="people" size={24} color="white" />
+            ) : (
+              <Text className="text-lg font-bold text-primary-foreground">
+                {conversation.other_participant.display_name?.charAt(0) || "?"}
+              </Text>
+            )}
           </View>
+          {conversation.conversation_type === 'group' && (
+            <View className="absolute -bottom-1 -right-1 h-6 w-6 items-center justify-center rounded-full bg-background border-2 border-background">
+              <Text className="text-xs font-bold text-green-600">
+                {conversation.participant_count}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Chat content */}
@@ -297,6 +310,12 @@ export default function ChatScreen() {
             onPress={handleRefresh}
           >
             <Ionicons name="refresh" size={20} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            className="h-10 w-10 items-center justify-center rounded-full bg-green-500 mr-2"
+            onPress={() => router.push("/new-group-chat")}
+          >
+            <Ionicons name="people" size={20} color="white" />
           </TouchableOpacity>
           <TouchableOpacity 
             className="h-10 w-10 items-center justify-center rounded-full bg-primary"

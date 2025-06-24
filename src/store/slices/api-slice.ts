@@ -646,9 +646,8 @@ export const apiSlice = createApi({
 
         // Transform data to ConversationWithDetails format
         const transformedData: ConversationWithDetails[] = (data || []).map(conv => {
-          const otherParticipant = conv.participants?.find(
-            (p: any) => p.user_id !== user.id
-          )?.profile;
+          const participants = conv.participants || [];
+          const otherParticipants = participants.filter((p: any) => p.user_id !== user.id);
           
           const lastMessage = conv.messages?.[conv.messages.length - 1];
           const unreadCount = (conv.messages || []).filter(
@@ -657,6 +656,50 @@ export const apiSlice = createApi({
 
           // Check if conversation is archived by current user
           const isArchived = (conv.archived_by || []).includes(user.id);
+
+          // For 1-on-1 conversations, use the other participant
+          // For group conversations, create a group display name
+          let displayParticipant;
+          let conversationType: 'individual' | 'group' = 'individual';
+          
+          if (otherParticipants.length === 1) {
+            // 1-on-1 conversation
+            displayParticipant = otherParticipants[0].profile;
+            conversationType = 'individual';
+          } else if (otherParticipants.length > 1) {
+            // Group conversation
+            conversationType = 'group';
+            const participantNames = otherParticipants
+              .map((p: any) => p.profile?.display_name || p.profile?.email?.split('@')[0] || 'Unknown')
+              .slice(0, 3) // Show max 3 names
+              .join(', ');
+            
+            const remainingCount = otherParticipants.length - 3;
+            const groupName = remainingCount > 0 
+              ? `${participantNames} and ${remainingCount} other${remainingCount > 1 ? 's' : ''}`
+              : participantNames;
+
+            displayParticipant = {
+              id: `group-${conv.id}`,
+              email: '',
+              display_name: groupName,
+              avatar_url: null,
+              bio: `Group conversation with ${otherParticipants.length + 1} participants`,
+              created_at: conv.created_at,
+              updated_at: conv.updated_at
+            };
+          } else {
+            // Fallback for edge cases
+            displayParticipant = {
+              id: 'unknown',
+              email: 'unknown@example.com',
+              display_name: 'Unknown User',
+              avatar_url: null,
+              bio: null,
+              created_at: '',
+              updated_at: ''
+            };
+          }
 
           // Generate appropriate preview text
           let lastMessagePreview = "No messages yet";
@@ -672,19 +715,13 @@ export const apiSlice = createApi({
 
           return {
             ...conv,
-            other_participant: otherParticipant || {
-              id: "unknown",
-              email: "unknown@example.com",
-              display_name: "Unknown User",
-              avatar_url: null,
-              bio: null,
-              created_at: "",
-              updated_at: "",
-            },
+            other_participant: displayParticipant,
             last_message_preview: lastMessagePreview,
             last_message_time: lastMessage?.created_at || conv.created_at,
             unread_count: unreadCount,
             is_archived: isArchived,
+            conversation_type: conversationType,
+            participant_count: participants.length
           };
         });
 
@@ -745,14 +782,57 @@ export const apiSlice = createApi({
 
         // Transform data similar to getConversations
         const transformedData: ConversationWithDetails[] = (data || []).map(conv => {
-          const otherParticipant = conv.participants?.find(
-            (p: any) => p.user_id !== user.id
-          )?.profile;
+          const participants = conv.participants || [];
+          const otherParticipants = participants.filter((p: any) => p.user_id !== user.id);
           
           const lastMessage = conv.messages?.[conv.messages.length - 1];
           const unreadCount = (conv.messages || []).filter(
             (m: any) => m.sender_id !== user.id && !(m.read_by || {})[user.id]
           ).length;
+
+          // For 1-on-1 conversations, use the other participant
+          // For group conversations, create a group display name
+          let displayParticipant;
+          let conversationType: 'individual' | 'group' = 'individual';
+          
+          if (otherParticipants.length === 1) {
+            // 1-on-1 conversation
+            displayParticipant = otherParticipants[0].profile;
+            conversationType = 'individual';
+          } else if (otherParticipants.length > 1) {
+            // Group conversation
+            conversationType = 'group';
+            const participantNames = otherParticipants
+              .map((p: any) => p.profile?.display_name || p.profile?.email?.split('@')[0] || 'Unknown')
+              .slice(0, 3) // Show max 3 names
+              .join(', ');
+            
+            const remainingCount = otherParticipants.length - 3;
+            const groupName = remainingCount > 0 
+              ? `${participantNames} and ${remainingCount} other${remainingCount > 1 ? 's' : ''}`
+              : participantNames;
+
+            displayParticipant = {
+              id: `group-${conv.id}`,
+              email: '',
+              display_name: groupName,
+              avatar_url: null,
+              bio: `Group conversation with ${otherParticipants.length + 1} participants`,
+              created_at: conv.created_at,
+              updated_at: conv.updated_at
+            };
+          } else {
+            // Fallback for edge cases
+            displayParticipant = {
+              id: 'unknown',
+              email: 'unknown@example.com',
+              display_name: 'Unknown User',
+              avatar_url: null,
+              bio: null,
+              created_at: '',
+              updated_at: ''
+            };
+          }
 
           let lastMessagePreview = "No messages yet";
           if (lastMessage) {
@@ -767,19 +847,13 @@ export const apiSlice = createApi({
 
           return {
             ...conv,
-            other_participant: otherParticipant || {
-              id: "unknown",
-              email: "unknown@example.com",
-              display_name: "Unknown User",
-              avatar_url: null,
-              bio: null,
-              created_at: "",
-              updated_at: "",
-            },
+            other_participant: displayParticipant,
             last_message_preview: lastMessagePreview,
             last_message_time: lastMessage?.created_at || conv.created_at,
             unread_count: unreadCount,
             is_archived: true,
+            conversation_type: conversationType,
+            participant_count: participants.length
           };
         });
 
@@ -801,7 +875,9 @@ export const apiSlice = createApi({
             conversations!inner (
               id,
               created_by,
-              created_at
+              created_at,
+              updated_at,
+              archived_by
             )
           `)
           .eq("user_id", user.id);
@@ -816,7 +892,7 @@ export const apiSlice = createApi({
             .eq("conversation_id", conv.conversation_id)
             .neq("user_id", user.id);
 
-          if (otherError) continue;
+          if (otherError) return { error: { status: "CUSTOM_ERROR", error: otherError.message } };
 
           if (otherParticipants?.some(p => p.user_id === participant_id)) {
             // Conversation already exists, return it
@@ -834,18 +910,235 @@ export const apiSlice = createApi({
         if (convError) return { error: { status: "CUSTOM_ERROR", error: convError.message } };
 
         // Add participants
-        const { error: participantError } = await supabase
+        const { error: participantsError } = await supabase
           .from("conversation_participants")
           .insert([
             { conversation_id: conversation.id, user_id: user.id },
             { conversation_id: conversation.id, user_id: participant_id }
           ]);
 
-        if (participantError) return { error: { status: "CUSTOM_ERROR", error: participantError.message } };
+        if (participantsError) return { error: { status: "CUSTOM_ERROR", error: participantsError.message } };
 
         return { data: conversation };
       },
       invalidatesTags: ["Conversation"],
+    }),
+
+    // Create group conversation with multiple participants
+    createGroupConversation: builder.mutation<Conversation, { 
+      participant_ids: string[]; 
+      group_name?: string;
+    }>({
+      queryFn: async ({ participant_ids, group_name }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        if (participant_ids.length < 1) {
+          return { error: { status: "CUSTOM_ERROR", error: "At least one participant is required" } };
+        }
+
+        // Create new conversation
+        const { data: conversation, error: convError } = await supabase
+          .from("conversations")
+          .insert({ 
+            created_by: user.id,
+            // Store group name in a metadata field if needed - for now we'll handle naming in the UI
+          })
+          .select()
+          .single();
+
+        if (convError) return { error: { status: "CUSTOM_ERROR", error: convError.message } };
+
+        // Add all participants (including creator)
+        const participantInserts = [
+          { conversation_id: conversation.id, user_id: user.id },
+          ...participant_ids.map(id => ({ conversation_id: conversation.id, user_id: id }))
+        ];
+
+        const { error: participantsError } = await supabase
+          .from("conversation_participants")
+          .insert(participantInserts);
+
+        if (participantsError) return { error: { status: "CUSTOM_ERROR", error: participantsError.message } };
+
+        return { data: conversation };
+      },
+      invalidatesTags: ["Conversation"],
+    }),
+
+    // Add participant to existing conversation
+    addParticipantToConversation: builder.mutation<string, { 
+      conversation_id: string; 
+      user_id: string;
+    }>({
+      queryFn: async ({ conversation_id, user_id }) => {
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (!currentUser) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Check if current user is in the conversation
+        const { data: isParticipant, error: checkError } = await supabase
+          .from("conversation_participants")
+          .select("id")
+          .eq("conversation_id", conversation_id)
+          .eq("user_id", currentUser.id)
+          .single();
+
+        if (checkError || !isParticipant) {
+          return { error: { status: "CUSTOM_ERROR", error: "You are not authorized to add participants to this conversation" } };
+        }
+
+        // Check if user is already in the conversation
+        const { data: existingParticipant, error: existingError } = await supabase
+          .from("conversation_participants")
+          .select("id")
+          .eq("conversation_id", conversation_id)
+          .eq("user_id", user_id)
+          .single();
+
+        if (!existingError && existingParticipant) {
+          return { error: { status: "CUSTOM_ERROR", error: "User is already in this conversation" } };
+        }
+
+        // Add participant
+        const { error: insertError } = await supabase
+          .from("conversation_participants")
+          .insert({ conversation_id, user_id });
+
+        if (insertError) return { error: { status: "CUSTOM_ERROR", error: insertError.message } };
+
+        // Send system message about new participant
+        const { data: newParticipant } = await supabase
+          .from("profiles")
+          .select("display_name")
+          .eq("id", user_id)
+          .single();
+
+        await supabase
+          .from("messages")
+          .insert({
+            conversation_id,
+            sender_id: currentUser.id,
+            content: `${newParticipant?.display_name || "Someone"} was added to the conversation`,
+            message_type: "system"
+          });
+
+        return { data: "Participant added successfully" };
+      },
+      invalidatesTags: ["Conversation", "Message"],
+    }),
+
+    // Remove participant from conversation
+    removeParticipantFromConversation: builder.mutation<string, { 
+      conversation_id: string; 
+      user_id: string;
+    }>({
+      queryFn: async ({ conversation_id, user_id }) => {
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (!currentUser) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Check if current user is in the conversation
+        const { data: isParticipant, error: checkError } = await supabase
+          .from("conversation_participants")
+          .select("id")
+          .eq("conversation_id", conversation_id)
+          .eq("user_id", currentUser.id)
+          .single();
+
+        if (checkError || !isParticipant) {
+          return { error: { status: "CUSTOM_ERROR", error: "You are not authorized to remove participants from this conversation" } };
+        }
+
+        // Remove participant
+        const { error: deleteError } = await supabase
+          .from("conversation_participants")
+          .delete()
+          .eq("conversation_id", conversation_id)
+          .eq("user_id", user_id);
+
+        if (deleteError) return { error: { status: "CUSTOM_ERROR", error: deleteError.message } };
+
+        // Send system message about removed participant
+        const { data: removedParticipant } = await supabase
+          .from("profiles")
+          .select("display_name")
+          .eq("id", user_id)
+          .single();
+
+        await supabase
+          .from("messages")
+          .insert({
+            conversation_id,
+            sender_id: currentUser.id,
+            content: `${removedParticipant?.display_name || "Someone"} was removed from the conversation`,
+            message_type: "system"
+          });
+
+        // Check if conversation has any remaining participants
+        const { data: remainingParticipants, error: remainingError } = await supabase
+          .from("conversation_participants")
+          .select("user_id")
+          .eq("conversation_id", conversation_id);
+
+        if (remainingError) return { error: { status: "CUSTOM_ERROR", error: remainingError.message } };
+
+        // If no participants left, delete the entire conversation
+        if (!remainingParticipants || remainingParticipants.length === 0) {
+          // Delete messages first
+          await supabase
+            .from("messages")
+            .delete()
+            .eq("conversation_id", conversation_id);
+
+          // Delete conversation
+          await supabase
+            .from("conversations")
+            .delete()
+            .eq("id", conversation_id);
+        }
+
+        return { data: "Participant removed successfully" };
+      },
+      invalidatesTags: ["Conversation", "Message"],
+    }),
+
+    // Get conversation participants with details
+    getConversationParticipants: builder.query<Array<Profile & { joined_at: string }>, string>({
+      queryFn: async (conversation_id) => {
+        const { data, error } = await supabase
+          .from("conversation_participants")
+          .select(`
+            joined_at,
+            profile:profiles (
+              id,
+              email,
+              display_name,
+              avatar_url,
+              bio
+            )
+          `)
+          .eq("conversation_id", conversation_id);
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        const participants = (data || []).map((p: any) => {
+          const profile = p.profile as Profile;
+          return {
+            id: profile.id,
+            email: profile.email,
+            display_name: profile.display_name,
+            avatar_url: profile.avatar_url,
+            bio: profile.bio,
+            created_at: profile.created_at,
+            updated_at: profile.updated_at,
+            joined_at: p.joined_at
+          };
+        });
+
+        return { data: participants };
+      },
+      providesTags: (_result, _error, conversation_id) => [
+        { type: "Conversation", id: conversation_id }
+      ],
     }),
 
     deleteConversation: builder.mutation<string, string>({
@@ -2195,4 +2488,8 @@ export const {
   useRecordStoryViewMutation,
   useDeleteStoryMutation,
   useCleanupExpiredStoriesMutation,
+  useGetConversationParticipantsQuery,
+  useCreateGroupConversationMutation,
+  useAddParticipantToConversationMutation,
+  useRemoveParticipantFromConversationMutation,
 } = apiSlice; 
