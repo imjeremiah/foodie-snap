@@ -25,6 +25,13 @@ export default function RootLayout() {
               gestureEnabled: true 
             }} 
           />
+          <Stack.Screen 
+            name="chat/[id]" 
+            options={{ 
+              presentation: "card",
+              gestureEnabled: true 
+            }} 
+          />
         </Stack>
       </AuthWrapper>
     </Provider>
