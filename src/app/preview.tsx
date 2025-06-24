@@ -17,20 +17,22 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useGetConversationsQuery, useSendPhotoMessageMutation } from "../store/slices/api-slice";
+import { useGetConversationsQuery, useSendPhotoMessageMutation, useSaveToJournalMutation } from "../store/slices/api-slice";
 import type { ConversationWithDetails } from "../types/database";
 
 export default function PreviewScreen() {
   const router = useRouter();
   const { imageUri } = useLocalSearchParams<{ imageUri: string }>();
   
-  // State for send modal
+  // State for send modal and journal saving
   const [showSendModal, setShowSendModal] = useState(false);
   const [sending, setSending] = useState(false);
+  const [savingToJournal, setSavingToJournal] = useState(false);
 
   // API hooks
   const { data: conversations = [], isLoading: loadingConversations } = useGetConversationsQuery();
   const [sendPhotoMessage] = useSendPhotoMessageMutation();
+  const [saveToJournal] = useSaveToJournalMutation();
 
   /**
    * Handle discard action - return to camera
@@ -98,6 +100,37 @@ export default function PreviewScreen() {
   };
 
   /**
+   * Handle saving to journal
+   */
+  const handleSaveToJournal = async () => {
+    if (!imageUri) return;
+
+    setSavingToJournal(true);
+    try {
+      await saveToJournal({
+        imageUri,
+        content_type: 'photo',
+        options: { quality: 0.8 }
+      }).unwrap();
+
+      Alert.alert(
+        "Saved to Journal!",
+        "Your photo has been saved to your journal.",
+        [{ text: "OK" }]
+      );
+    } catch (error) {
+      console.error("Failed to save to journal:", error);
+      Alert.alert(
+        "Save Failed",
+        "Failed to save photo to journal. Please try again.",
+        [{ text: "OK" }]
+      );
+    } finally {
+      setSavingToJournal(false);
+    }
+  };
+
+  /**
    * Handle back navigation
    */
   const handleBack = () => {
@@ -156,7 +189,7 @@ export default function PreviewScreen() {
 
       {/* Bottom action buttons */}
       <View className="absolute bottom-0 left-0 right-0 pb-8">
-        <View className="flex-row items-center justify-center space-x-8 px-8">
+        <View className="flex-row items-center justify-center space-x-4 px-4">
           {/* Discard button */}
           <TouchableOpacity
             className="flex-1 items-center justify-center rounded-full bg-black/50 py-4"
@@ -166,6 +199,24 @@ export default function PreviewScreen() {
               <Ionicons name="trash-outline" size={24} color="white" />
               <Text className="mt-1 text-sm font-medium text-white">
                 Discard
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Save to Journal button */}
+          <TouchableOpacity
+            className="flex-1 items-center justify-center rounded-full bg-green-600 py-4"
+            onPress={handleSaveToJournal}
+            disabled={savingToJournal}
+          >
+            <View className="items-center">
+              {savingToJournal ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Ionicons name="bookmark-outline" size={24} color="white" />
+              )}
+              <Text className="mt-1 text-sm font-medium text-white">
+                {savingToJournal ? "Saving..." : "Journal"}
               </Text>
             </View>
           </TouchableOpacity>

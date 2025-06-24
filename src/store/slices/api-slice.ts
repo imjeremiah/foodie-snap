@@ -16,7 +16,8 @@ import type {
   UserStats,
   CompleteUserStats,
   UserPreferences,
-  BlockedUser
+  BlockedUser,
+  JournalEntry
 } from "../../types/database";
 
 /**
@@ -41,7 +42,7 @@ const supabaseBaseQuery = fetchBaseQuery({
 export const apiSlice = createApi({
   reducerPath: "api",
   baseQuery: supabaseBaseQuery,
-  tagTypes: ["Profile", "Friend", "Conversation", "Message"],
+  tagTypes: ["Profile", "Friend", "Conversation", "Message", "Journal"],
   endpoints: (builder) => ({
     // Profile endpoints
     getCurrentProfile: builder.query<Profile, void>({
@@ -1259,6 +1260,273 @@ export const apiSlice = createApi({
       invalidatesTags: ["Message", "Conversation"],
     }),
 
+    // Journal endpoints
+    getJournalEntries: builder.query<JournalEntry[], {
+      filter?: 'all' | 'favorites' | 'photos' | 'videos' | 'shared';
+      search?: string;
+      limit?: number;
+      offset?: number;
+    }>({
+      queryFn: async ({ filter = 'all', search, limit = 20, offset = 0 }) => {
+        const { data, error } = await supabase
+          .rpc('get_journal_entries', {
+            filter_type: filter,
+            search_term: search || null,
+            limit_count: limit,
+            offset_count: offset
+          });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || [] };
+      },
+      providesTags: ["Journal"],
+    }),
+
+    saveToJournal: builder.mutation<JournalEntry, {
+      imageUri: string;
+      caption?: string;
+      content_type?: 'photo' | 'video';
+      shared_to_chat?: boolean;
+      shared_to_story?: boolean;
+      shared_to_spotlight?: boolean;
+      tags?: string[];
+      options?: PhotoUploadOptions;
+    }>({
+      queryFn: async ({ 
+        imageUri, 
+        caption, 
+        content_type = 'photo',
+        shared_to_chat = false,
+        shared_to_story = false,
+        shared_to_spotlight = false,
+        tags = [],
+        options 
+      }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // First upload the photo/video
+        const uploadResult = await uploadPhoto(imageUri, options);
+        if (!uploadResult.success) {
+          return { error: { status: "CUSTOM_ERROR", error: uploadResult.error || "Upload failed" } };
+        }
+
+        // Create journal entry
+        const { data, error } = await supabase
+          .from("journal_entries")
+          .insert({
+            user_id: user.id,
+            image_url: uploadResult.data!.fullUrl,
+            caption,
+            content_type,
+            shared_to_chat,
+            shared_to_story,
+            shared_to_spotlight,
+            tags: tags.length > 0 ? tags : null,
+          })
+          .select()
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        // Update user stats
+        await supabase.rpc('increment_user_stat', {
+          user_id_param: user.id,
+          stat_name: 'photos_shared',
+          increment_by: 1
+        });
+
+        return { data };
+      },
+      invalidatesTags: ["Journal", "Profile"],
+    }),
+
+    updateJournalEntry: builder.mutation<JournalEntry, {
+      id: string;
+      caption?: string;
+      tags?: string[];
+      folder_name?: string;
+    }>({
+      queryFn: async ({ id, ...updates }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .from("journal_entries")
+          .update({
+            ...updates,
+            tags: updates.tags ? updates.tags : null,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", id)
+          .eq("user_id", user.id)
+          .select()
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      invalidatesTags: ["Journal"],
+    }),
+
+    deleteJournalEntry: builder.mutation<string, string>({
+      queryFn: async (entryId) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Get the entry to check if we need to delete the image
+        const { data: entry, error: fetchError } = await supabase
+          .from("journal_entries")
+          .select("image_url")
+          .eq("id", entryId)
+          .eq("user_id", user.id)
+          .single();
+
+        if (fetchError) return { error: { status: "CUSTOM_ERROR", error: fetchError.message } };
+
+        // Delete from database
+        const { error } = await supabase
+          .from("journal_entries")
+          .delete()
+          .eq("id", entryId)
+          .eq("user_id", user.id);
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        // Optional: Delete image from storage if it's not used elsewhere
+        // For now, we'll keep images in storage for safety
+
+        return { data: "Journal entry deleted successfully" };
+      },
+      invalidatesTags: ["Journal"],
+    }),
+
+    toggleJournalFavorite: builder.mutation<boolean, string>({
+      queryFn: async (entryId) => {
+        const { data, error } = await supabase.rpc('toggle_journal_favorite', {
+          entry_id: entryId
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || false };
+      },
+      invalidatesTags: ["Journal"],
+    }),
+
+    organizeJournalEntry: builder.mutation<boolean, {
+      entryId: string;
+      folderName: string;
+    }>({
+      queryFn: async ({ entryId, folderName }) => {
+        const { data, error } = await supabase.rpc('organize_journal_entry', {
+          entry_id: entryId,
+          new_folder_name: folderName
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || false };
+      },
+      invalidatesTags: ["Journal"],
+    }),
+
+    reshareFromJournal: builder.mutation<string, {
+      entryId: string;
+      destination: 'chat' | 'story' | 'spotlight';
+      conversationId?: string; // Required if destination is 'chat'
+    }>({
+      queryFn: async ({ entryId, destination, conversationId }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Get the journal entry
+        const { data: entry, error: fetchError } = await supabase
+          .from("journal_entries")
+          .select("*")
+          .eq("id", entryId)
+          .eq("user_id", user.id)
+          .single();
+
+        if (fetchError) return { error: { status: "CUSTOM_ERROR", error: fetchError.message } };
+
+        if (destination === 'chat' && conversationId) {
+          // Send as message
+          const { error: messageError } = await supabase
+            .from("messages")
+            .insert({
+              conversation_id: conversationId,
+              sender_id: user.id,
+              image_url: entry.image_url,
+              content: entry.caption,
+              message_type: "image"
+            });
+
+          if (messageError) return { error: { status: "CUSTOM_ERROR", error: messageError.message } };
+
+          // Update conversation timestamp
+          await supabase
+            .from("conversations")
+            .update({ updated_at: new Date().toISOString() })
+            .eq("id", conversationId);
+
+          // Update sharing metadata
+          await supabase
+            .from("journal_entries")
+            .update({ shared_to_chat: true })
+            .eq("id", entryId);
+
+          return { data: "Reshared to chat successfully" };
+        }
+
+        // For story and spotlight, we'll implement these when those features are ready
+        // For now, just update the sharing metadata
+        const updateData = destination === 'story' 
+          ? { shared_to_story: true }
+          : { shared_to_spotlight: true };
+
+        await supabase
+          .from("journal_entries")
+          .update(updateData)
+          .eq("id", entryId);
+
+        return { data: `Reshared to ${destination} successfully` };
+      },
+      invalidatesTags: ["Journal", "Message", "Conversation"],
+    }),
+
+    getJournalStats: builder.query<{
+      total_entries: number;
+      favorites_count: number;
+      photos_count: number;
+      videos_count: number;
+      shared_count: number;
+    }, void>({
+      queryFn: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .from("journal_entries")
+          .select("content_type, is_favorite, shared_to_chat, shared_to_story, shared_to_spotlight")
+          .eq("user_id", user.id)
+          .eq("is_archived", false);
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        const stats = {
+          total_entries: data?.length || 0,
+          favorites_count: data?.filter(entry => entry.is_favorite).length || 0,
+          photos_count: data?.filter(entry => entry.content_type === 'photo').length || 0,
+          videos_count: data?.filter(entry => entry.content_type === 'video').length || 0,
+          shared_count: data?.filter(entry => 
+            entry.shared_to_chat || entry.shared_to_story || entry.shared_to_spotlight
+          ).length || 0,
+        };
+
+        return { data: stats };
+      },
+      providesTags: ["Journal"],
+    }),
+
     // Seed demo data for single-device testing
     seedDemoData: builder.mutation<string, void>({
       queryFn: async () => {
@@ -1315,4 +1583,13 @@ export const {
   useArchiveConversationMutation,
   useLeaveConversationMutation,
   useGetArchivedConversationsQuery,
+  // Journal hooks
+  useGetJournalEntriesQuery,
+  useSaveToJournalMutation,
+  useUpdateJournalEntryMutation,
+  useDeleteJournalEntryMutation,
+  useToggleJournalFavoriteMutation,
+  useOrganizeJournalEntryMutation,
+  useReshareFromJournalMutation,
+  useGetJournalStatsQuery,
 } = apiSlice; 

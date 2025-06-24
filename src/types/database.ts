@@ -159,6 +159,40 @@ export interface Message {
   sender?: Profile;
 }
 
+export interface JournalEntry {
+  id: string;
+  user_id: string;
+  
+  // Content metadata
+  image_url: string;
+  thumbnail_url?: string | null;
+  content_type: 'photo' | 'video';
+  caption?: string | null;
+  
+  // Sharing metadata
+  shared_to_chat: boolean;
+  shared_to_story: boolean;
+  shared_to_spotlight: boolean;
+  original_message_id?: string | null;
+  
+  // Content categorization and search
+  tags?: string[] | null;
+  extracted_text?: string | null;
+  
+  // Technical metadata
+  file_size?: number | null;
+  dimensions?: { width: number; height: number } | null;
+  location_data?: { lat: number; lng: number; name: string } | null;
+  
+  // Organization
+  is_favorite: boolean;
+  is_archived: boolean;
+  folder_name?: string | null;
+  
+  created_at: string;
+  updated_at: string;
+}
+
 // Helper types for UI components
 export interface ConversationWithDetails extends Conversation {
   other_participant: Profile;

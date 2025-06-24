@@ -1,27 +1,554 @@
 /**
- * @file Journal screen - displays user's content history for RAG personalization.
- * Currently a placeholder screen for Phase 2.
+ * @file Journal screen - displays user's content history with grid layout and functionality.
+ * Implements Phase 2.1 Step 7: Content Journal Implementation
  */
 
-import { View, Text } from "react-native";
+import React, { useState, useCallback } from "react";
+import { 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  FlatList, 
+  Image, 
+  TextInput,
+  Modal,
+  Alert,
+  ActivityIndicator,
+  RefreshControl,
+  Dimensions
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { 
+  useGetJournalEntriesQuery, 
+  useDeleteJournalEntryMutation,
+  useToggleJournalFavoriteMutation,
+  useGetJournalStatsQuery,
+  useReshareFromJournalMutation,
+  useGetConversationsQuery
+} from "../../store/slices/api-slice";
+import type { JournalEntry, ConversationWithDetails } from "../../types/database";
 
-export default function JournalScreen() {
+const { width: screenWidth } = Dimensions.get('window');
+const ITEM_SIZE = (screenWidth - 32 - 20) / 3; // 3 columns with padding
+
+type FilterType = 'all' | 'favorites' | 'photos' | 'videos' | 'shared';
+
+interface JournalItemProps {
+  item: JournalEntry;
+  onPress: (item: JournalEntry) => void;
+  onLongPress: (item: JournalEntry) => void;
+}
+
+/**
+ * Individual journal grid item component
+ */
+function JournalItem({ item, onPress, onLongPress }: JournalItemProps) {
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <View className="flex-1 items-center justify-center px-4">
-        <View className="rounded-lg border border-border bg-card p-6 shadow-lg">
-          <Text className="text-center text-2xl font-bold text-foreground">
-            Journal
-          </Text>
-          <Text className="mt-2 text-center text-lg text-muted-foreground">
-            Your content history
-          </Text>
-          <Text className="mt-4 text-center text-sm text-muted-foreground">
-            Phase 2: Coming soon...
+    <TouchableOpacity
+      className="relative bg-muted rounded-lg overflow-hidden"
+      style={{ width: ITEM_SIZE, height: ITEM_SIZE }}
+      onPress={() => onPress(item)}
+      onLongPress={() => onLongPress(item)}
+      activeOpacity={0.8}
+    >
+      <Image
+        source={{ uri: item.image_url }}
+        style={{ width: ITEM_SIZE, height: ITEM_SIZE }}
+        resizeMode="cover"
+      />
+      
+      {/* Overlay indicators */}
+      <View className="absolute top-1 right-1 flex-row space-x-1">
+        {item.is_favorite && (
+          <View className="bg-red-500 rounded-full p-1">
+            <Ionicons name="heart" size={12} color="white" />
+          </View>
+        )}
+        {(item.shared_to_chat || item.shared_to_story || item.shared_to_spotlight) && (
+          <View className="bg-blue-500 rounded-full p-1">
+            <Ionicons name="share" size={12} color="white" />
+          </View>
+        )}
+        {item.content_type === 'video' && (
+          <View className="bg-black/50 rounded-full p-1">
+            <Ionicons name="play" size={12} color="white" />
+          </View>
+        )}
+      </View>
+
+      {/* Caption preview */}
+      {item.caption && (
+        <View className="absolute bottom-0 left-0 right-0 bg-black/50 px-2 py-1">
+          <Text className="text-white text-xs" numberOfLines={2}>
+            {item.caption}
           </Text>
         </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+export default function JournalScreen() {
+  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showReshareModal, setShowReshareModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // API hooks
+  const { 
+    data: journalEntries = [], 
+    isLoading, 
+    error,
+    refetch 
+  } = useGetJournalEntriesQuery({
+    filter: activeFilter,
+    search: searchQuery.trim() || undefined,
+    limit: 100
+  });
+
+  const { data: journalStats } = useGetJournalStatsQuery();
+  const { data: conversations = [] } = useGetConversationsQuery();
+  const [deleteJournalEntry] = useDeleteJournalEntryMutation();
+  const [toggleFavorite] = useToggleJournalFavoriteMutation();
+  const [reshareFromJournal] = useReshareFromJournalMutation();
+
+  /**
+   * Handle pull-to-refresh
+   */
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
+
+  /**
+   * Handle filter changes
+   */
+  const handleFilterChange = (filter: FilterType) => {
+    setActiveFilter(filter);
+    setSearchQuery(''); // Clear search when changing filters
+  };
+
+  /**
+   * Handle entry press (show detail modal)
+   */
+  const handleEntryPress = (entry: JournalEntry) => {
+    setSelectedEntry(entry);
+    setShowDetailModal(true);
+  };
+
+  /**
+   * Handle entry long press (show action menu)
+   */
+  const handleEntryLongPress = (entry: JournalEntry) => {
+    setSelectedEntry(entry);
+    showActionMenu();
+  };
+
+  /**
+   * Show action menu for entry
+   */
+  const showActionMenu = () => {
+    if (!selectedEntry) return;
+
+    Alert.alert(
+      "Journal Entry Actions",
+      `What would you like to do with this ${selectedEntry.content_type}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: selectedEntry.is_favorite ? "Remove from Favorites" : "Add to Favorites",
+          onPress: handleToggleFavorite
+        },
+        {
+          text: "Reshare",
+          onPress: () => setShowReshareModal(true)
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: handleDeleteEntry
+        }
+      ]
+    );
+  };
+
+  /**
+   * Toggle favorite status
+   */
+  const handleToggleFavorite = async () => {
+    if (!selectedEntry) return;
+
+    try {
+      await toggleFavorite(selectedEntry.id).unwrap();
+      Alert.alert(
+        "Success",
+        selectedEntry.is_favorite ? "Removed from favorites" : "Added to favorites"
+      );
+    } catch (error) {
+      console.error('Toggle favorite failed:', error);
+      Alert.alert("Error", "Failed to update favorite status");
+    }
+  };
+
+  /**
+   * Delete entry
+   */
+  const handleDeleteEntry = async () => {
+    if (!selectedEntry) return;
+
+    Alert.alert(
+      "Delete Entry",
+      "Are you sure you want to delete this entry? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteJournalEntry(selectedEntry.id).unwrap();
+              Alert.alert("Success", "Entry deleted successfully");
+            } catch (error) {
+              console.error('Delete failed:', error);
+              Alert.alert("Error", "Failed to delete entry");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  /**
+   * Handle reshare to conversation
+   */
+  const handleReshareToChat = async (conversation: ConversationWithDetails) => {
+    if (!selectedEntry) return;
+
+    try {
+      await reshareFromJournal({
+        entryId: selectedEntry.id,
+        destination: 'chat',
+        conversationId: conversation.id
+      }).unwrap();
+
+      Alert.alert(
+        "Success",
+        `Reshared to ${conversation.other_participant.display_name || 'chat'}`
+      );
+      setShowReshareModal(false);
+    } catch (error) {
+      console.error('Reshare failed:', error);
+      Alert.alert("Error", "Failed to reshare content");
+    }
+  };
+
+  /**
+   * Get filter button style
+   */
+  const getFilterButtonStyle = (filter: FilterType) => {
+    const isActive = activeFilter === filter;
+    return `px-4 py-2 rounded-full ${
+      isActive 
+        ? 'bg-primary' 
+        : 'bg-muted border border-border'
+    }`;
+  };
+
+  /**
+   * Get filter button text style
+   */
+  const getFilterTextStyle = (filter: FilterType) => {
+    const isActive = activeFilter === filter;
+    return `text-sm font-medium ${
+      isActive ? 'text-primary-foreground' : 'text-foreground'
+    }`;
+  };
+
+  /**
+   * Render empty state
+   */
+  const renderEmptyState = () => (
+    <View className="flex-1 items-center justify-center px-4">
+      <Ionicons name="book-outline" size={64} color="#9CA3AF" />
+      <Text className="mt-4 text-center text-xl font-semibold text-foreground">
+        {searchQuery ? 'No Results Found' : 'Your Journal is Empty'}
+      </Text>
+      <Text className="mt-2 text-center text-muted-foreground">
+        {searchQuery 
+          ? `No entries match "${searchQuery}"`
+          : 'Capture and share photos to start building your content history'
+        }
+      </Text>
+    </View>
+  );
+
+  /**
+   * Render journal stats
+   */
+  const renderStats = () => {
+    if (!journalStats) return null;
+
+    return (
+      <View className="flex-row justify-around bg-card p-4 mx-4 rounded-lg shadow-sm">
+        <View className="items-center">
+          <Text className="text-2xl font-bold text-primary">
+            {journalStats.total_entries}
+          </Text>
+          <Text className="text-xs text-muted-foreground">Total</Text>
+        </View>
+        <View className="items-center">
+          <Text className="text-2xl font-bold text-red-500">
+            {journalStats.favorites_count}
+          </Text>
+          <Text className="text-xs text-muted-foreground">Favorites</Text>
+        </View>
+        <View className="items-center">
+          <Text className="text-2xl font-bold text-blue-500">
+            {journalStats.shared_count}
+          </Text>
+          <Text className="text-xs text-muted-foreground">Shared</Text>
+        </View>
       </View>
+    );
+  };
+
+  if (error) {
+    return (
+      <SafeAreaView className="flex-1 bg-background">
+        <View className="flex-1 items-center justify-center px-4">
+          <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
+          <Text className="mt-4 text-center text-xl font-semibold text-foreground">
+            Error Loading Journal
+          </Text>
+          <Text className="mt-2 text-center text-muted-foreground">
+            Please try again later
+          </Text>
+          <TouchableOpacity
+            className="mt-4 rounded-md bg-primary px-6 py-3"
+            onPress={() => refetch()}
+          >
+            <Text className="font-semibold text-primary-foreground">
+              Retry
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView className="flex-1 bg-background">
+      {/* Header */}
+      <View className="px-4 pb-4">
+        <Text className="text-2xl font-bold text-foreground">Journal</Text>
+        <Text className="text-sm text-muted-foreground">
+          Your content history
+        </Text>
+      </View>
+
+      {/* Stats */}
+      {renderStats()}
+
+      {/* Search Bar */}
+      <View className="mx-4 mt-4 mb-2">
+        <View className="flex-row items-center bg-muted rounded-lg px-3 py-2">
+          <Ionicons name="search" size={20} color="#9CA3AF" />
+          <TextInput
+            className="flex-1 ml-2 text-foreground"
+            placeholder="Search your journal..."
+            placeholderTextColor="#9CA3AF"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* Filter Tabs */}
+      <View className="px-4 mb-4">
+        <FlatList
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          data={[
+            { key: 'all', label: 'All' },
+            { key: 'favorites', label: 'Favorites' },
+            { key: 'photos', label: 'Photos' },
+            { key: 'videos', label: 'Videos' },
+            { key: 'shared', label: 'Shared' }
+          ]}
+          keyExtractor={(item) => item.key}
+          contentContainerStyle={{ gap: 8 }}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              className={getFilterButtonStyle(item.key as FilterType)}
+              onPress={() => handleFilterChange(item.key as FilterType)}
+            >
+              <Text className={getFilterTextStyle(item.key as FilterType)}>
+                {item.label}
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
+      </View>
+
+      {/* Content Grid */}
+      {isLoading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color="hsl(var(--primary))" />
+          <Text className="mt-2 text-muted-foreground">Loading journal...</Text>
+        </View>
+      ) : journalEntries.length === 0 ? (
+        renderEmptyState()
+      ) : (
+        <FlatList
+          data={journalEntries}
+          keyExtractor={(item) => item.id}
+          numColumns={3}
+          contentContainerStyle={{ padding: 16, gap: 10 }}
+          columnWrapperStyle={{ gap: 10 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={["hsl(var(--primary))"]}
+            />
+          }
+          renderItem={({ item }) => (
+            <JournalItem
+              item={item}
+              onPress={handleEntryPress}
+              onLongPress={handleEntryLongPress}
+            />
+          )}
+        />
+      )}
+
+      {/* Detail Modal */}
+      <Modal
+        visible={showDetailModal}
+        animationType="fade"
+        presentationStyle="overFullScreen"
+        onRequestClose={() => setShowDetailModal(false)}
+      >
+        <View className="flex-1 bg-black">
+          <SafeAreaView className="flex-1">
+            {/* Header */}
+            <View className="absolute top-0 left-0 right-0 z-10 bg-black/50 p-4">
+              <View className="flex-row items-center justify-between">
+                <TouchableOpacity
+                  className="h-10 w-10 items-center justify-center rounded-full bg-black/50"
+                  onPress={() => setShowDetailModal(false)}
+                >
+                  <Ionicons name="close" size={24} color="white" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="h-10 w-10 items-center justify-center rounded-full bg-black/50"
+                  onPress={() => {
+                    setShowDetailModal(false);
+                    setTimeout(() => showActionMenu(), 100);
+                  }}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={24} color="white" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Image */}
+            {selectedEntry && (
+              <View className="flex-1 items-center justify-center">
+                <Image
+                  source={{ uri: selectedEntry.image_url }}
+                  className="h-full w-full"
+                  resizeMode="contain"
+                />
+              </View>
+            )}
+
+            {/* Caption */}
+            {selectedEntry?.caption && (
+              <View className="absolute bottom-0 left-0 right-0 bg-black/50 p-4">
+                <Text className="text-white text-base">
+                  {selectedEntry.caption}
+                </Text>
+                <Text className="text-white/70 text-sm mt-1">
+                  {new Date(selectedEntry.created_at).toLocaleDateString()}
+                </Text>
+              </View>
+            )}
+          </SafeAreaView>
+        </View>
+      </Modal>
+
+      {/* Reshare Modal */}
+      <Modal
+        visible={showReshareModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowReshareModal(false)}
+      >
+        <SafeAreaView className="flex-1 bg-background">
+          {/* Header */}
+          <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
+            <TouchableOpacity onPress={() => setShowReshareModal(false)}>
+              <Text className="text-primary">Cancel</Text>
+            </TouchableOpacity>
+            <Text className="text-lg font-semibold text-foreground">Reshare</Text>
+            <View className="w-12" />
+          </View>
+
+          {/* Conversations List */}
+          <FlatList
+            data={conversations}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ padding: 16 }}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                className="flex-row items-center border-b border-border py-4"
+                onPress={() => handleReshareToChat(item)}
+              >
+                <View className="mr-3 h-12 w-12 items-center justify-center rounded-full bg-primary">
+                  {item.other_participant.avatar_url ? (
+                    <Image
+                      source={{ uri: item.other_participant.avatar_url }}
+                      className="h-12 w-12 rounded-full"
+                    />
+                  ) : (
+                    <Text className="text-lg font-semibold text-primary-foreground">
+                      {(item.other_participant.display_name || item.other_participant.email)
+                        .charAt(0)
+                        .toUpperCase()}
+                    </Text>
+                  )}
+                </View>
+                <View className="flex-1">
+                  <Text className="text-base font-semibold text-foreground">
+                    {item.other_participant.display_name || 
+                     item.other_participant.email.split('@')[0]}
+                  </Text>
+                  <Text className="text-sm text-muted-foreground">
+                    Tap to reshare
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              <View className="items-center justify-center py-8">
+                <Text className="text-muted-foreground">No conversations available</Text>
+              </View>
+            }
+          />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
