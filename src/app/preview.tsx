@@ -20,6 +20,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { useGetConversationsQuery, useSendPhotoMessageMutation, useSaveToJournalMutation, useSendSnapMessageEnhancedMutation, useCreateStoryMutation } from "../store/slices/api-slice";
 import type { ConversationWithDetails } from "../types/database";
+import CreativeToolsModal from "../components/creative/CreativeToolsModal";
 
 type MediaType = 'photo' | 'video';
 
@@ -41,6 +42,10 @@ export default function PreviewScreen() {
     maxReplays: 1,
     expiresIn: 86400 // 24 hours
   });
+
+  // Creative tools state
+  const [showCreativeTools, setShowCreativeTools] = useState(false);
+  const [editedMediaUri, setEditedMediaUri] = useState<string | null>(null);
 
   // API hooks
   const { data: conversations = [], isLoading: loadingConversations } = useGetConversationsQuery();
@@ -100,7 +105,8 @@ export default function PreviewScreen() {
    * Send media to a specific conversation
    */
   const sendToConversation = async (conversation: ConversationWithDetails) => {
-    if (!mediaUri) return;
+    const currentUri = getCurrentMediaUri();
+    if (!currentUri) return;
 
     setSending(true);
     try {
@@ -108,7 +114,7 @@ export default function PreviewScreen() {
         // Send as snap with enhanced features
         await sendSnapMessage({
           conversation_id: conversation.id,
-          imageUri: mediaUri,
+          imageUri: currentUri,
           viewing_duration: snapSettings.viewingDuration,
           max_replays: snapSettings.maxReplays,
           expires_in_seconds: snapSettings.expiresIn,
@@ -124,7 +130,7 @@ export default function PreviewScreen() {
         // Send as regular photo/video
         await sendPhotoMessage({
           conversation_id: conversation.id,
-          imageUri: mediaUri,
+          imageUri: currentUri,
           mediaType: mediaType as 'photo' | 'video',
           options: { quality: 0.8 }
         }).unwrap();
@@ -153,12 +159,13 @@ export default function PreviewScreen() {
    * Handle saving to journal
    */
       const handleSaveToJournal = async () => {
-    if (!mediaUri) return;
+    const currentUri = getCurrentMediaUri();
+    if (!currentUri) return;
 
     setSavingToJournal(true);
     try {
       await saveToJournal({
-        imageUri: mediaUri,
+        imageUri: currentUri,
         content_type: mediaType as 'photo' | 'video',
         options: { quality: 0.8 }
       }).unwrap();
@@ -184,12 +191,13 @@ export default function PreviewScreen() {
    * Handle posting to story
    */
   const handlePostToStory = async () => {
-    if (!mediaUri) return;
+    const currentUri = getCurrentMediaUri();
+    if (!currentUri) return;
 
     setPostingToStory(true);
     try {
       await createStory({
-        imageUri: mediaUri,
+        imageUri: currentUri,
         content_type: mediaType as 'photo' | 'video',
         viewing_duration: 5, // Default 5 seconds
         options: { quality: 0.8 }
@@ -217,6 +225,28 @@ export default function PreviewScreen() {
    */
   const handleBack = () => {
     router.back();
+  };
+
+  /**
+   * Handle opening creative tools
+   */
+  const handleOpenCreativeTools = () => {
+    setShowCreativeTools(true);
+  };
+
+  /**
+   * Handle saving edited media from creative tools
+   */
+  const handleSaveEditedMedia = (newEditedUri: string) => {
+    setEditedMediaUri(newEditedUri);
+    setShowCreativeTools(false);
+  };
+
+  /**
+   * Get the current media URI (edited version if available)
+   */
+  const getCurrentMediaUri = () => {
+    return editedMediaUri || mediaUri;
   };
 
   if (!mediaUri) {
@@ -275,12 +305,20 @@ export default function PreviewScreen() {
           />
         ) : (
           <Image
-            source={{ uri: mediaUri }}
+            source={{ uri: getCurrentMediaUri() }}
             className="h-full w-full"
             resizeMode="contain"
           />
         )}
       </View>
+
+      {/* Edit button (floating) */}
+      <TouchableOpacity
+        className="absolute top-20 right-4 h-12 w-12 items-center justify-center rounded-full bg-blue-500"
+        onPress={handleOpenCreativeTools}
+      >
+        <Ionicons name="brush" size={20} color="white" />
+      </TouchableOpacity>
 
       {/* Bottom action buttons */}
       <View className="absolute bottom-0 left-0 right-0 pb-8">
@@ -524,6 +562,15 @@ export default function PreviewScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Creative Tools Modal */}
+      <CreativeToolsModal
+        visible={showCreativeTools}
+        onClose={() => setShowCreativeTools(false)}
+        mediaUri={mediaUri || ''}
+        mediaType={mediaType as 'photo' | 'video'}
+        onSave={handleSaveEditedMedia}
+      />
     </SafeAreaView>
   );
 } 
