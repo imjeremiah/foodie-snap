@@ -26,11 +26,13 @@ import {
   PanGestureHandlerGestureEvent,
 } from "react-native-gesture-handler";
 import Svg, { Path } from "react-native-svg";
+import { captureRef } from "react-native-view-shot";
 import { 
   composeEditedImage, 
   COLOR_FILTERS,
   TEXT_COLORS,
   DRAWING_COLORS,
+  getFilterStyle,
   type TextOverlay as TextOverlayType,
   type DrawingPath as DrawingPathType,
   type ColorFilter,
@@ -38,6 +40,7 @@ import {
 } from "../../lib/image-processing";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const CANVAS_HEIGHT = SCREEN_HEIGHT - 250; // Adjust for controls
 
 interface TextOverlay extends TextOverlayType {
   backgroundColor?: string;
@@ -81,6 +84,9 @@ export default function CreativeToolsModal({
   const [brushSize, setBrushSize] = useState(5);
   const [isDrawing, setIsDrawing] = useState(false);
 
+  // Refs for view capture
+  const canvasRef = useRef<View>(null);
+
   /**
    * Add a new text overlay at center of screen
    */
@@ -91,7 +97,7 @@ export default function CreativeToolsModal({
       id: Date.now().toString(),
       text: textInput,
       x: SCREEN_WIDTH / 2 - 100,
-      y: SCREEN_HEIGHT / 2 - 50,
+      y: CANVAS_HEIGHT / 2 - 50,
       fontSize: textSize,
       color: selectedTextColor,
       fontWeight: 'bold'
@@ -144,7 +150,7 @@ export default function CreativeToolsModal({
   };
 
   /**
-   * Apply all edits and compose final image
+   * Apply all edits and compose final image using view capture
    */
   const applyEditsAndSave = async () => {
     setIsProcessing(true);
@@ -164,24 +170,24 @@ export default function CreativeToolsModal({
         return;
       }
       
-      // Prepare composition options
-      const compositionOptions: CompositionOptions = {
-        textOverlays: textOverlays.length > 0 ? textOverlays : undefined,
-        drawingPaths: drawingPaths.length > 0 ? drawingPaths : undefined,
-        colorFilter: selectedFilter > 0 ? COLOR_FILTERS[selectedFilter] : undefined,
-        quality: 0.9
-      };
-      
-      // Compose the final image
-      const editedUri = await composeEditedImage(mediaUri, compositionOptions);
-      
-      onSave(editedUri);
-      
-      Alert.alert(
-        "Edits Applied!",
-        "Your photo has been edited and is ready to send or save.",
-        [{ text: "OK", onPress: onClose }]
-      );
+      // Capture the edited view as an image
+      if (canvasRef.current) {
+        const uri = await captureRef(canvasRef.current, {
+          format: 'jpg',
+          quality: 0.9,
+          result: 'tmpfile',
+        });
+        
+        onSave(uri);
+        
+        Alert.alert(
+          "Edits Applied!",
+          "Your photo has been edited and is ready to send or save.",
+          [{ text: "OK", onPress: onClose }]
+        );
+      } else {
+        throw new Error('Unable to capture edited image');
+      }
       
     } catch (error) {
       console.error('Error applying edits:', error);
@@ -200,6 +206,92 @@ export default function CreativeToolsModal({
     setSelectedFilter(0);
     setCurrentPath('');
     setToolMode('none');
+  };
+
+  /**
+   * Get current filter style for real-time preview
+   */
+  const getImageStyle = () => {
+    const baseStyle = {
+      width: SCREEN_WIDTH,
+      height: CANVAS_HEIGHT,
+      resizeMode: 'contain' as const
+    };
+
+    if (selectedFilter === 0) {
+      return baseStyle;
+    }
+
+    const filter = COLOR_FILTERS[selectedFilter];
+    const filterStyle = getFilterStyle(filter);
+    
+    return {
+      ...baseStyle,
+      ...filterStyle,
+      // Add opacity overlay for filter effects
+      opacity: filter.name === 'Dramatic' ? 0.9 : 1,
+    };
+  };
+
+  /**
+   * Get filter overlay for visual effects
+   */
+  const getFilterOverlay = () => {
+    if (selectedFilter === 0) return null;
+    
+    const filter = COLOR_FILTERS[selectedFilter];
+    let overlayColor = 'transparent';
+    let overlayOpacity = 0;
+    
+    switch (filter.name) {
+      case 'Warm':
+        overlayColor = '#FFE4B5';
+        overlayOpacity = 0.15;
+        break;
+      case 'Cool':
+        overlayColor = '#B0E0E6';
+        overlayOpacity = 0.15;
+        break;
+      case 'Vintage':
+        overlayColor = '#DEB887';
+        overlayOpacity = 0.2;
+        break;
+      case 'Dramatic':
+        overlayColor = '#000000';
+        overlayOpacity = 0.1;
+        break;
+      case 'B&W':
+        overlayColor = '#808080';
+        overlayOpacity = 0.3;
+        break;
+      case 'Sepia':
+        overlayColor = '#DEB887';
+        overlayOpacity = 0.25;
+        break;
+      case 'High Contrast':
+        overlayColor = '#000000';
+        overlayOpacity = 0.05;
+        break;
+    }
+    
+    if (overlayOpacity > 0) {
+      return (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: SCREEN_WIDTH,
+            height: CANVAS_HEIGHT,
+            backgroundColor: overlayColor,
+            opacity: overlayOpacity,
+            pointerEvents: 'none',
+          }}
+        />
+      );
+    }
+    
+    return null;
   };
 
   if (!visible) return null;
@@ -232,17 +324,20 @@ export default function CreativeToolsModal({
             </TouchableOpacity>
           </View>
 
-          {/* Main editing area */}
-          <View className="flex-1 relative">
-            {/* Base image with filter */}
+          {/* Main editing area - This will be captured */}
+          <View 
+            ref={canvasRef} 
+            className="flex-1 relative"
+            style={{ backgroundColor: '#000000' }}
+          >
+            {/* Base image with filter effects */}
             <Image
               source={{ uri: mediaUri }}
-              style={{
-                width: SCREEN_WIDTH,
-                height: SCREEN_HEIGHT - 200,
-                resizeMode: 'contain'
-              }}
+              style={getImageStyle()}
             />
+            
+            {/* Filter overlay for visual effects */}
+            {getFilterOverlay()}
             
             {/* Text overlays */}
             {textOverlays.map((overlay) => (
@@ -278,7 +373,7 @@ export default function CreativeToolsModal({
                   top: 0,
                   left: 0,
                   width: SCREEN_WIDTH,
-                  height: SCREEN_HEIGHT - 200,
+                  height: CANVAS_HEIGHT,
                 }}
                 pointerEvents={toolMode === 'draw' ? 'auto' : 'none'}
               >
@@ -315,7 +410,7 @@ export default function CreativeToolsModal({
                     top: 0,
                     left: 0,
                     width: SCREEN_WIDTH,
-                    height: SCREEN_HEIGHT - 200,
+                    height: CANVAS_HEIGHT,
                   }}
                 />
               </PanGestureHandler>
@@ -323,7 +418,7 @@ export default function CreativeToolsModal({
           </View>
 
           {/* Tool selection */}
-          <View className="bg-black/80 p-4">
+          <View className="bg-black/90 p-4">
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View className="flex-row space-x-4">
                 {/* Text tool */}
@@ -457,6 +552,9 @@ export default function CreativeToolsModal({
 
             {toolMode === 'filter' && (
               <View className="mt-4">
+                <Text className="text-white text-sm mb-3">
+                  Tap a filter to preview - Current: {COLOR_FILTERS[selectedFilter].name}
+                </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View className="flex-row space-x-3">
                     {COLOR_FILTERS.map((filter, index) => (
