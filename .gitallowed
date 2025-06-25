@@ -1,0 +1,8 @@
+use[A-Za-z0-9]+Mutation
+useGet[A-Za-z0-9]+Query
+[A-Za-z]+TypeName[A-Za-z]*
+Public[A-Za-z]+Options
+Composite[A-Za-z]+
+requestMediaLibraryPermissionsAsync
+removeParticipantFromConversation
+ConversationManagementModalProps
