@@ -1322,6 +1322,15 @@ export const apiSlice = createApi({
       invalidatesTags: ["Profile", "Friend", "Conversation", "Message"],
     }),
 
+    cleanMyDemoData: builder.mutation<string, void>({
+      queryFn: async () => {
+        const { data, error } = await supabase.rpc("clean_my_demo_data");
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || "Demo data cleaned successfully" };
+      },
+      invalidatesTags: ["Profile", "Friend", "Conversation", "Message", "Spotlight"],
+    }),
+
     // Photo upload endpoint
     uploadPhoto: builder.mutation<PhotoUploadResult, { 
       imageUri: string; 
@@ -1892,11 +1901,11 @@ export const apiSlice = createApi({
     // Seed demo data for single-device testing
     seedDemoData: builder.mutation<string, void>({
       queryFn: async () => {
-        const { error } = await supabase.rpc("seed_demo_data");
+        const { data, error } = await supabase.rpc("reseed_demo_data");
         if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
-        return { data: "Demo data seeded successfully" };
+        return { data: data || "Demo data seeded successfully" };
       },
-      invalidatesTags: ["Profile", "Friend", "Conversation", "Message"],
+      invalidatesTags: ["Profile", "Friend", "Conversation", "Message", "Spotlight"],
     }),
 
     // Spotlight endpoints
@@ -2444,6 +2453,7 @@ export const {
   useCleanupExpiredMessagesMutation,
   useResetDemoDataMutation,
   useSeedDemoDataMutation,
+  useCleanMyDemoDataMutation,
   useRejectFriendRequestMutation,
   useRemoveFriendMutation,
   useBlockUserMutation,

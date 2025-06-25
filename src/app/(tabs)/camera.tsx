@@ -3,7 +3,7 @@
  * Provides camera functionality for capturing photos and recording videos with permissions handling.
  */
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { View, Text, TouchableOpacity, Alert, StyleSheet, Animated } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CameraView, CameraType, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
@@ -20,6 +20,31 @@ export default function CameraScreen() {
   const router = useRouter();
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const recordingAnimValue = useRef(new Animated.Value(1)).current;
+  
+  // Touch handling refs for tap vs hold detection
+  const pressStartTimeRef = useRef<number>(0);
+  const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isHoldingRef = useRef<boolean>(false);
+
+  /**
+   * Cleanup timers on component unmount
+   */
+  useEffect(() => {
+    return () => {
+      // Clean up recording timer
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+      
+      // Clean up hold detection timer
+      if (holdTimerRef.current) {
+        clearTimeout(holdTimerRef.current);
+      }
+      
+      // Stop any ongoing animations
+      recordingAnimValue.stopAnimation();
+    };
+  }, [recordingAnimValue]);
 
   /**
    * Handle camera permission request
@@ -93,7 +118,7 @@ export default function CameraScreen() {
    * Capture a photo and navigate to preview screen
    */
   async function takePicture() {
-    if (cameraRef.current) {
+    if (cameraRef.current && !isRecording) {
       try {
         const photo = await cameraRef.current.takePictureAsync({
           quality: 0.8,
@@ -228,19 +253,43 @@ export default function CameraScreen() {
   }
 
   /**
-   * Handle press in (start recording)
+   * Handle press in - start timer to detect tap vs hold
    */
   function handlePressIn() {
-    startVideoRecording();
+    if (isRecording) return; // Don't allow new actions while recording
+    
+    pressStartTimeRef.current = Date.now();
+    isHoldingRef.current = false;
+    
+    // Set timer for hold detection (300ms threshold)
+    holdTimerRef.current = setTimeout(() => {
+      isHoldingRef.current = true;
+      startVideoRecording();
+    }, 300) as unknown as NodeJS.Timeout;
   }
 
   /**
-   * Handle press out (stop recording)
+   * Handle press out - determine if it was a tap or hold
    */
   function handlePressOut() {
-    if (isRecording) {
-      stopVideoRecording();
+    const pressDuration = Date.now() - pressStartTimeRef.current;
+    
+    // Clear the hold timer
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
     }
+    
+    if (isRecording) {
+      // If we're recording, stop the recording
+      stopVideoRecording();
+    } else if (!isHoldingRef.current && pressDuration < 300) {
+      // If it was a quick tap (< 300ms) and we're not recording, take a photo
+      takePicture();
+    }
+    
+    // Reset hold state
+    isHoldingRef.current = false;
   }
 
   return (
@@ -299,10 +348,10 @@ export default function CameraScreen() {
                     styles.captureButton,
                     isRecording && styles.captureButtonRecording
                   ]}
-                  onPress={takePicture}
                   onPressIn={handlePressIn}
                   onPressOut={handlePressOut}
-                  disabled={isRecording && recordingDuration < 1} // Prevent immediate stop
+                  disabled={false} // Always allow interaction
+                  activeOpacity={0.8}
                 >
                   <Animated.View 
                     style={[
