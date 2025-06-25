@@ -2126,20 +2126,73 @@ export const apiSlice = createApi({
       error?: string;
     }, {
       message_id: string;
-      viewer_id: string;
+      viewing_started_at: string;
+      is_replay?: boolean;
     }>({
-      queryFn: async ({ message_id, viewer_id }) => {
+      queryFn: async ({ message_id, viewing_started_at, is_replay = false }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
         const { data, error } = await supabase.rpc('record_snap_view', {
           message_id_param: message_id,
-          viewer_id_param: viewer_id
+          viewer_id_param: user.id,
+          viewing_started_at_param: viewing_started_at,
+          is_replay_param: is_replay
         });
 
         if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
-        return { data };
+        return { data: data || { success: true, replay_count: 0, can_replay: true } };
       },
       invalidatesTags: (_result, _error, { message_id }) => [
         { type: "Message", id: message_id },
         "Message"
+      ],
+    }),
+
+    incrementSnapReplay: builder.mutation<{
+      success: boolean;
+      replay_count: number;
+      can_replay: boolean;
+    }, {
+      message_id: string;
+    }>({
+      queryFn: async ({ message_id }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase.rpc('increment_snap_replay', {
+          message_id_param: message_id,
+          viewer_id_param: user.id
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || { success: true, replay_count: 1, can_replay: false } };
+      },
+      invalidatesTags: (_result, _error, { message_id }) => [
+        { type: "Message", id: message_id },
+        "Message"
+      ],
+    }),
+
+    recordSnapScreenshot: builder.mutation<void, {
+      message_id: string;
+      screenshot_timestamp: string;
+    }>({
+      queryFn: async ({ message_id, screenshot_timestamp }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { error } = await supabase.rpc('record_snap_screenshot', {
+          message_id_param: message_id,
+          screenshotter_id_param: user.id,
+          screenshot_timestamp_param: screenshot_timestamp
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: undefined };
+      },
+      invalidatesTags: (_result, _error, { message_id }) => [
+        { type: "Message", id: message_id }
       ],
     }),
 
@@ -2487,6 +2540,8 @@ export const {
   // Snap viewing hooks
   useCanViewSnapQuery,
   useRecordSnapViewMutation,
+  useIncrementSnapReplayMutation,
+  useRecordSnapScreenshotMutation,
   useRecordScreenshotMutation,
   useGetScreenshotNotificationsQuery,
   useSendSnapMessageEnhancedMutation,

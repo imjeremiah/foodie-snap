@@ -209,13 +209,13 @@ export async function getImageDimensions(imageUri: string): Promise<{ width: num
 }
 
 /**
- * Enhanced color filters with better visual effects for React Native
- * These work with overlay components rather than CSS filters
+ * Enhanced color filters optimized for overlay-based effects in React Native
+ * Each filter includes overlay colors and blend modes for realistic effects
  */
 export const COLOR_FILTERS: ColorFilter[] = [
   { 
     name: 'None',
-    description: 'Original image'
+    description: 'Original image with no filters applied'
   },
   { 
     name: 'Warm', 
@@ -223,7 +223,8 @@ export const COLOR_FILTERS: ColorFilter[] = [
     contrast: 1.1, 
     saturate: 1.2,
     tint: '#FFA500',
-    description: 'Warm orange tint'
+    overlay: '#FFA500',
+    description: 'Warm golden tint for cozy photos'
   },
   { 
     name: 'Cool', 
@@ -231,7 +232,8 @@ export const COLOR_FILTERS: ColorFilter[] = [
     contrast: 1.1, 
     saturate: 0.8,
     tint: '#87CEEB',
-    description: 'Cool blue tint'
+    overlay: '#4A90E2',
+    description: 'Cool blue tint for modern look'
   },
   { 
     name: 'Vintage', 
@@ -240,7 +242,8 @@ export const COLOR_FILTERS: ColorFilter[] = [
     saturate: 0.7, 
     sepia: 0.3,
     tint: '#DEB887',
-    description: 'Vintage sepia effect'
+    overlay: '#D2B48C',
+    description: 'Retro vintage aesthetic'
   },
   { 
     name: 'Dramatic', 
@@ -248,7 +251,8 @@ export const COLOR_FILTERS: ColorFilter[] = [
     contrast: 1.4, 
     saturate: 1.3,
     tint: '#000000',
-    description: 'High contrast dramatic'
+    overlay: '#1A1A1A',
+    description: 'High contrast dramatic effect'
   },
   { 
     name: 'B&W', 
@@ -256,15 +260,17 @@ export const COLOR_FILTERS: ColorFilter[] = [
     contrast: 1.1, 
     saturate: 0,
     tint: '#808080',
-    description: 'Black and white'
+    overlay: '#GREY',
+    description: 'Classic black and white'
   },
   { 
     name: 'Sepia', 
     brightness: 1.0, 
     contrast: 1.0, 
     sepia: 1.0,
-    tint: '#DEB887',
-    description: 'Classic sepia tone'
+    tint: '#D2B48C',
+    overlay: '#D2B48C',
+    description: 'Warm sepia tone'
   },
   { 
     name: 'High Contrast', 
@@ -272,7 +278,8 @@ export const COLOR_FILTERS: ColorFilter[] = [
     contrast: 1.6, 
     saturate: 1.1,
     tint: '#FFFFFF',
-    description: 'Bright high contrast'
+    overlay: '#FFFFFF',
+    description: 'Sharp high contrast effect'
   },
 ];
 

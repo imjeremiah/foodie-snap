@@ -53,7 +53,7 @@ export default function ChatThreadScreen() {
   const [otherUserTyping, setOtherUserTyping] = useState(false);
   const [expiredMessages, setExpiredMessages] = useState<Set<string>>(new Set());
   const [showSnapViewer, setShowSnapViewer] = useState(false);
-  const [snapViewerData, setSnapViewerData] = useState<{ snaps: any[]; initialIndex: number } | null>(null);
+  const [selectedSnap, setSelectedSnap] = useState<any>(null);
   const [showGroupManagement, setShowGroupManagement] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -235,28 +235,34 @@ export default function ChatThreadScreen() {
   const handleSnapTap = useCallback((tappedMessage: any) => {
     if (tappedMessage.message_type !== 'snap') return;
     
-    // Get all snap messages in this conversation for sequence viewing
-    const snapMessages = messages.filter(msg => 
-      msg.message_type === 'snap' && 
-      !expiredMessages.has(msg.id) &&
-      (!msg.expires_at || new Date(msg.expires_at) > new Date())
-    );
-    
-    const initialIndex = snapMessages.findIndex(snap => snap.id === tappedMessage.id);
-    
-    if (initialIndex >= 0) {
-      setSnapViewerData({ snaps: snapMessages, initialIndex });
-      setShowSnapViewer(true);
+    // Check if snap is still valid (not expired)
+    if (expiredMessages.has(tappedMessage.id) || 
+        (tappedMessage.expires_at && new Date(tappedMessage.expires_at) < new Date())) {
+      Alert.alert("Snap Expired", "This snap has expired and can no longer be viewed.");
+      return;
     }
-  }, [messages, expiredMessages]);
+    
+    setSelectedSnap(tappedMessage);
+    setShowSnapViewer(true);
+  }, [expiredMessages]);
 
   /**
    * Handle snap viewer close
    */
   const handleSnapViewerClose = useCallback(() => {
     setShowSnapViewer(false);
-    setSnapViewerData(null);
+    setSelectedSnap(null);
   }, []);
+
+  /**
+   * Handle snap completion - when viewing is finished
+   */
+  const handleSnapComplete = useCallback(() => {
+    // Mark the message as expired locally since it was viewed
+    if (selectedSnap) {
+      setExpiredMessages(prev => new Set([...prev, selectedSnap.id]));
+    }
+  }, [selectedSnap]);
 
   /**
    * Format timestamp for display
@@ -550,21 +556,15 @@ export default function ChatThreadScreen() {
         </View>
       </KeyboardAvoidingView>
 
-      {/* Snap Viewer Modal */}
-      <Modal
+      {/* Snap Viewer */}
+      <SnapViewer
         visible={showSnapViewer}
-        animationType="fade"
-        presentationStyle="fullScreen"
-      >
-        {snapViewerData && (
-          <SnapViewer
-            snaps={snapViewerData.snaps}
-            initialIndex={snapViewerData.initialIndex}
-            onClose={handleSnapViewerClose}
-            currentUserId={user?.id || ''}
-          />
-        )}
-      </Modal>
+        onClose={handleSnapViewerClose}
+        snap={selectedSnap}
+        senderName={selectedSnap?.sender?.display_name || "Someone"}
+        canReplay={true}
+        onSnapComplete={handleSnapComplete}
+      />
 
       {/* Group Management Modal */}
       {isGroup === "true" && (

@@ -477,40 +477,46 @@ export default function JournalScreen() {
         <View className="flex-1 bg-black">
           <SafeAreaView className="flex-1">
             {/* Header */}
-            <View className="absolute top-0 left-0 right-0 z-10 bg-black/50 p-4">
+            <View className="absolute top-0 left-0 right-0 z-10 p-4" style={{ paddingTop: 50 }}>
               <View className="flex-row items-center justify-between">
                 <TouchableOpacity
-                  className="h-10 w-10 items-center justify-center rounded-full bg-black/50"
+                  className="h-12 w-12 items-center justify-center rounded-full bg-black/70"
                   onPress={() => setShowDetailModal(false)}
+                  activeOpacity={0.7}
                 >
-                  <Ionicons name="close" size={24} color="white" />
+                  <Ionicons name="close" size={28} color="white" />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  className="h-10 w-10 items-center justify-center rounded-full bg-black/50"
+                  className="h-12 w-12 items-center justify-center rounded-full bg-black/70"
                   onPress={() => {
                     setShowDetailModal(false);
                     setTimeout(() => showActionMenu(), 100);
                   }}
+                  activeOpacity={0.7}
                 >
-                  <Ionicons name="ellipsis-horizontal" size={24} color="white" />
+                  <Ionicons name="ellipsis-horizontal" size={28} color="white" />
                 </TouchableOpacity>
               </View>
             </View>
 
             {/* Image */}
             {selectedEntry && (
-              <View className="flex-1 items-center justify-center">
+              <TouchableOpacity 
+                className="flex-1 items-center justify-center"
+                onPress={() => setShowDetailModal(false)}
+                activeOpacity={1}
+              >
                 <Image
                   source={{ uri: selectedEntry.image_url }}
                   className="h-full w-full"
                   resizeMode="contain"
                 />
-              </View>
+              </TouchableOpacity>
             )}
 
             {/* Caption */}
             {selectedEntry?.caption && (
-              <View className="absolute bottom-0 left-0 right-0 bg-black/50 p-4">
+              <View className="absolute bottom-0 left-0 right-0 bg-black/70 p-4" style={{ paddingBottom: 40 }}>
                 <Text className="text-white text-base">
                   {selectedEntry.caption}
                 </Text>

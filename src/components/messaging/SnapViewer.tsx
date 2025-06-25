@@ -1,438 +1,510 @@
 /**
- * @file SnapViewer component - Full-screen snap viewing experience.
- * Provides timed viewing, screenshot detection, replay functionality, and tap-to-progress navigation.
+ * @file SnapViewer component - handles the core snap viewing experience
+ * Features timed viewing, screenshot detection, replay functionality, and tap-to-progress navigation
+ * This is the authentic Snapchat-style snap viewing experience
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
-  Image,
+  Modal,
   TouchableOpacity,
+  Image,
   Dimensions,
-  StatusBar,
   Alert,
-  Pressable,
+  ActivityIndicator,
+  PanResponder,
   Animated,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { VideoView, useVideoPlayer } from 'expo-video';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import * as ScreenCapture from 'expo-screen-capture';
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { VideoView, useVideoPlayer } from "expo-video";
+import { addScreenshotListener, removeScreenshotListener } from "expo-screen-capture";
 import { 
-  useCanViewSnapQuery, 
   useRecordSnapViewMutation, 
-  useRecordScreenshotMutation 
-} from '../../store/slices/api-slice';
-import type { Message } from '../../types/database';
+  useIncrementSnapReplayMutation,
+  useRecordSnapScreenshotMutation 
+} from "../../store/slices/api-slice";
+import type { Message } from "../../types/database";
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 interface SnapViewerProps {
-  snaps: Message[];
-  initialIndex: number;
+  visible: boolean;
   onClose: () => void;
-  currentUserId: string;
+  snap: Message | null;
+  senderName: string;
+  canReplay?: boolean;
+  onSnapComplete?: () => void;
 }
 
-
-
-export default function SnapViewer({ snaps, initialIndex, onClose, currentUserId }: SnapViewerProps) {
-  const router = useRouter();
-  const [currentIndex, setCurrentIndex] = useState(initialIndex);
-  const [timeRemaining, setTimeRemaining] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true);
+export default function SnapViewer({
+  visible,
+  onClose,
+  snap,
+  senderName,
+  canReplay = true,
+  onSnapComplete
+}: SnapViewerProps) {
+  // State
+  const [progress, setProgress] = useState(0);
+  const [isPaused, setPaused] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [hasStartedViewing, setHasStartedViewing] = useState(false);
-  
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const progressAnim = useRef(new Animated.Value(0)).current;
-  const screenWidth = Dimensions.get('window').width;
-  
-  const [recordSnapView] = useRecordSnapViewMutation();
-  const [recordScreenshot] = useRecordScreenshotMutation();
-  
-  const currentSnap = snaps[currentIndex];
+  const [replayCount, setReplayCount] = useState(0);
+  const [showReplayButton, setShowReplayButton] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
 
-  // Create video player for current snap
+  // Refs
+  const progressInterval = useRef<NodeJS.Timeout | null>(null);
+  const viewingStartTime = useRef<number>(0);
+  const screenshotListener = useRef<any>(null);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  // API hooks
+  const [recordSnapView] = useRecordSnapViewMutation();
+  const [incrementSnapReplay] = useIncrementSnapReplayMutation();
+  const [recordSnapScreenshot] = useRecordSnapScreenshotMutation();
+
+  // Video player for video snaps
   const videoPlayer = useVideoPlayer(
-    currentSnap?.message_type === 'image' && currentSnap?.image_url ? null : 
-    currentSnap?.image_url || null,
+    snap?.message_type === 'snap' && snap?.image_url && snap?.image_url.includes('.mp4') 
+      ? snap.image_url 
+      : null,
     player => {
       if (player) {
         player.loop = false;
-        if (isPlaying) {
-          player.play();
-        }
+        player.volume = 1.0;
       }
     }
   );
 
-  // Use RTK Query to check snap viewability
-  const { 
-    data: snapViewInfo, 
-    isLoading, 
-    error: viewError 
-  } = useCanViewSnapQuery({
-    message_id: currentSnap?.id || '',
-    viewer_id: currentUserId,
-  }, {
-    skip: !currentSnap || !currentUserId,
-  });
+  // Viewing duration (default 5 seconds, max 10)
+  const viewingDuration = Math.min(snap?.viewing_duration || 5, 10) * 1000; // Convert to milliseconds
+  const maxReplays = snap?.max_replays || 1;
 
-  // Handle view error
+  /**
+   * Initialize screenshot detection
+   */
   useEffect(() => {
-    if (viewError) {
-      console.error('Error checking snap viewability:', viewError);
-      Alert.alert('Error', 'Failed to load snap');
-      onClose();
-    }
-  }, [viewError, onClose]);
+    if (!visible || !snap) return;
 
-  // Handle snap that cannot be viewed
-  useEffect(() => {
-    if (snapViewInfo && !snapViewInfo.can_view) {
-      Alert.alert('Cannot View Snap', snapViewInfo.error || 'This snap cannot be viewed');
-      onClose();
-    }
-  }, [snapViewInfo, onClose]);
+    // Set up screenshot listener
+    screenshotListener.current = addScreenshotListener(() => {
+      handleScreenshotDetected();
+    });
 
-  // Set time remaining when snap info is available
-  useEffect(() => {
-    if (snapViewInfo?.can_view) {
-      setTimeRemaining(snapViewInfo.viewing_duration);
-    }
-  }, [snapViewInfo]);
-
-
-
-  /**
-   * Record that the snap has been viewed
-   */
-  const recordView = useCallback(async () => {
-    if (!currentSnap || !snapViewInfo?.can_view) return;
-    
-    try {
-      await recordSnapView({
-        message_id: currentSnap.id,
-        viewer_id: currentUserId,
-      });
-    } catch (error) {
-      console.error('Error recording snap view:', error);
-    }
-  }, [currentSnap, snapViewInfo, currentUserId, recordSnapView]);
-
-  /**
-   * Start the viewing timer and progress animation
-   */
-  const startViewing = useCallback(() => {
-    if (!snapViewInfo?.can_view || hasStartedViewing) return;
-    
-    setHasStartedViewing(true);
-    recordView();
-    
-    // Start progress animation
-    Animated.timing(progressAnim, {
-      toValue: 1,
-      duration: snapViewInfo.viewing_duration * 1000,
-      useNativeDriver: false,
-    }).start();
-    
-    // Start countdown timer
-    timerRef.current = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          handleSnapComplete();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000) as unknown as NodeJS.Timeout;
-  }, [snapViewInfo, hasStartedViewing, recordView, progressAnim]);
-
-  /**
-   * Handle snap viewing completion
-   */
-  const handleSnapComplete = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-    
-    // Move to next snap or close if no more snaps
-    if (currentIndex < snaps.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-      setHasStartedViewing(false);
-      progressAnim.setValue(0);
-    } else {
-      onClose();
-    }
-  }, [currentIndex, snaps.length, onClose, progressAnim]);
-
-  /**
-   * Handle tap to progress to next snap
-   */
-  const handleTapToProgress = useCallback(() => {
-    if (hasStartedViewing) {
-      handleSnapComplete();
-    }
-  }, [hasStartedViewing, handleSnapComplete]);
+    return () => {
+      if (screenshotListener.current) {
+        removeScreenshotListener(screenshotListener.current);
+      }
+    };
+  }, [visible, snap]);
 
   /**
    * Handle screenshot detection
    */
   const handleScreenshotDetected = useCallback(async () => {
-    if (!currentSnap) return;
-    
+    if (!snap) return;
+
     try {
-      await recordScreenshot({
-        message_id: currentSnap.id,
-        screenshotter_id: currentUserId,
-      });
-      
-      // Show a subtle notification that screenshot was detected
+      await recordSnapScreenshot({
+        message_id: snap.id,
+        screenshot_timestamp: new Date().toISOString()
+      }).unwrap();
+
+      // Show screenshot notification to user
       Alert.alert(
-        'Screenshot Detected',
-        'The sender will be notified that you took a screenshot.',
-        [{ text: 'OK' }]
+        "Screenshot Detected",
+        `${senderName} will be notified that you took a screenshot.`,
+        [{ text: "OK" }]
       );
     } catch (error) {
-      console.error('Error recording screenshot:', error);
+      console.error("Failed to record screenshot:", error);
     }
-  }, [currentSnap, currentUserId, recordScreenshot]);
+  }, [snap, senderName, recordSnapScreenshot]);
+
+  /**
+   * Start the viewing progress timer
+   */
+  const startProgress = useCallback(() => {
+    if (!snap || hasStartedViewing) return;
+
+    setHasStartedViewing(true);
+    viewingStartTime.current = Date.now();
+
+    // Record the view
+    recordSnapView({
+      message_id: snap.id,
+      viewing_started_at: new Date().toISOString(),
+      is_replay: replayCount > 0
+    });
+
+    // Start progress animation
+    progressInterval.current = setInterval(() => {
+      const elapsed = Date.now() - viewingStartTime.current;
+      const newProgress = Math.min(elapsed / viewingDuration, 1);
+      
+      setProgress(newProgress);
+      
+      if (newProgress >= 1) {
+        completeViewing();
+      }
+    }, 50); // Update every 50ms for smooth animation
+  }, [snap, hasStartedViewing, replayCount, viewingDuration, recordSnapView]);
+
+  /**
+   * Stop the progress timer
+   */
+  const stopProgress = useCallback(() => {
+    if (progressInterval.current) {
+      clearInterval(progressInterval.current);
+      progressInterval.current = null;
+    }
+  }, []);
+
+  /**
+   * Complete the viewing session
+   */
+  const completeViewing = useCallback(() => {
+    stopProgress();
+    setIsCompleted(true);
+    
+    // Show replay button if replays are available
+    const canShowReplay = canReplay && replayCount < maxReplays;
+    setShowReplayButton(canShowReplay);
+
+    // Fade out after a brief delay if no replay available
+    if (!canShowReplay) {
+      setTimeout(() => {
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 500,
+          useNativeDriver: true,
+        }).start(() => {
+          onSnapComplete?.();
+          onClose();
+        });
+      }, 1000);
+    }
+  }, [stopProgress, canReplay, replayCount, maxReplays, fadeAnim, onSnapComplete, onClose]);
 
   /**
    * Handle replay functionality
    */
-  const handleReplay = useCallback(() => {
-    if (!snapViewInfo || snapViewInfo.replay_count >= snapViewInfo.max_replays) {
-      Alert.alert('No Replays Left', 'You have used all available replays for this snap.');
-      return;
+  const handleReplay = useCallback(async () => {
+    if (!snap || replayCount >= maxReplays) return;
+
+    try {
+      await incrementSnapReplay({
+        message_id: snap.id
+      }).unwrap();
+
+      // Reset viewing state for replay
+      setReplayCount(prev => prev + 1);
+      setProgress(0);
+      setIsCompleted(false);
+      setShowReplayButton(false);
+      setHasStartedViewing(false);
+      fadeAnim.setValue(1);
+
+      // Restart viewing
+      setTimeout(startProgress, 100);
+    } catch (error) {
+      console.error("Failed to record replay:", error);
+      Alert.alert("Error", "Failed to replay snap. Please try again.");
     }
-    
-    // Reset viewing state for replay
-    setHasStartedViewing(false);
-    setTimeRemaining(snapViewInfo.viewing_duration);
-    progressAnim.setValue(0);
-    
-    // Restart viewing
-    setTimeout(() => startViewing(), 100);
-  }, [snapViewInfo, progressAnim, startViewing]);
+  }, [snap, replayCount, maxReplays, incrementSnapReplay, fadeAnim, startProgress]);
 
   /**
-   * Setup screenshot detection
+   * Handle tap to start viewing
    */
-  useEffect(() => {
-    let subscription: any;
+  const handleTapToStart = useCallback(() => {
+    if (!hasStartedViewing && !isCompleted) {
+      startProgress();
+    }
+  }, [hasStartedViewing, isCompleted, startProgress]);
+
+  /**
+   * Handle long press to pause/resume
+   */
+  const handleLongPress = useCallback(() => {
+    if (!hasStartedViewing || isCompleted) return;
     
-    const setupScreenshotDetection = async () => {
-      try {
-        // Request screenshot notification permissions
-        const { status } = await ScreenCapture.requestPermissionsAsync();
-        
-        if (status === 'granted') {
-          subscription = ScreenCapture.addScreenshotListener(() => {
-            handleScreenshotDetected();
-          });
+    if (isPaused) {
+      // Resume
+      setPaused(false);
+      viewingStartTime.current = Date.now() - (progress * viewingDuration);
+      startProgress();
+    } else {
+      // Pause
+      setPaused(true);
+      stopProgress();
+    }
+  }, [hasStartedViewing, isCompleted, isPaused, progress, viewingDuration, startProgress, stopProgress]);
+
+  /**
+   * Pan responder for swipe gestures
+   */
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        return Math.abs(gestureState.dy) > 20;
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        // Handle swipe down to close
+        if (gestureState.dy > 100) {
+          onClose();
         }
-      } catch (error) {
-        console.error('Screenshot detection setup failed:', error);
-      }
-    };
-    
-    setupScreenshotDetection();
-    
-    return () => {
-      if (subscription) {
-        subscription.remove();
-      }
-    };
-  }, [handleScreenshotDetected]);
+      },
+    })
+  ).current;
 
   /**
-   * Listen for video end event
+   * Handle video load
    */
   useEffect(() => {
-    if (!videoPlayer) return;
-    
-    const subscription = videoPlayer.addListener('playToEnd', () => {
-      if (currentSnap?.message_type !== 'image') {
-        handleSnapComplete();
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [videoPlayer, currentSnap, handleSnapComplete]);
-
-
-
-  /**
-   * Start viewing when snap info is available
-   */
-  useEffect(() => {
-    if (snapViewInfo?.can_view && !isLoading && !hasStartedViewing) {
-      startViewing();
+    if (videoPlayer) {
+      videoPlayer.addListener('statusChange', (status) => {
+        if (status.isLoaded) {
+          setIsLoading(false);
+        }
+      });
     }
-  }, [snapViewInfo, isLoading, hasStartedViewing, startViewing]);
+  }, [videoPlayer]);
 
   /**
-   * Update video player playback state
+   * Reset state when modal opens/closes
    */
   useEffect(() => {
-    if (videoPlayer && currentSnap?.message_type !== 'image') {
-      if (isPlaying) {
-        videoPlayer.play();
-      } else {
-        videoPlayer.pause();
+    if (visible && snap) {
+      // Reset all state
+      setProgress(0);
+      setPaused(false);
+      setIsLoading(true);
+      setHasStartedViewing(false);
+      setReplayCount(0);
+      setShowReplayButton(false);
+      setIsCompleted(false);
+      fadeAnim.setValue(1);
+      
+      // For images, set loading to false immediately
+      if (snap.message_type === 'snap' && snap.image_url && !snap.image_url.includes('.mp4')) {
+        setIsLoading(false);
       }
+    } else {
+      // Cleanup
+      stopProgress();
     }
-  }, [videoPlayer, isPlaying, currentSnap]);
+  }, [visible, snap, fadeAnim, stopProgress]);
 
   /**
-   * Cleanup timer on unmount
+   * Cleanup on unmount
    */
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
+      stopProgress();
+      if (screenshotListener.current) {
+        removeScreenshotListener(screenshotListener.current);
       }
     };
-  }, []);
+  }, [stopProgress]);
 
-  if (isLoading || !snapViewInfo) {
-    return (
-      <View className="flex-1 bg-black items-center justify-center">
-        <Text className="text-white text-lg">Loading snap...</Text>
-      </View>
-    );
-  }
+  if (!visible || !snap) return null;
 
-  if (!snapViewInfo.can_view) {
-    return (
-      <View className="flex-1 bg-black items-center justify-center px-6">
-        <Ionicons name="eye-off" size={64} color="white" />
-        <Text className="text-white text-xl font-bold mt-4 text-center">
-          Can't View Snap
-        </Text>
-        <Text className="text-white/70 text-center mt-2">
-          {snapViewInfo.error}
-        </Text>
-        <TouchableOpacity
-          className="mt-6 bg-white/20 px-6 py-3 rounded-full"
-          onPress={onClose}
-        >
-          <Text className="text-white font-semibold">Close</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const isVideo = snap.image_url?.includes('.mp4') || false;
 
   return (
-    <View className="flex-1 bg-black">
-      <StatusBar hidden />
-      
-      {/* Progress Bar */}
-      <SafeAreaView edges={['top']}>
-        <View className="flex-row px-2 pt-2 pb-1 space-x-1">
-          {snaps.map((_, index) => (
-            <View key={index} className="flex-1 h-1 bg-white/30 rounded">
-              {index === currentIndex && (
-                <Animated.View
-                  className="h-full bg-white rounded"
-                  style={{
-                    width: progressAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['0%', '100%'],
-                    }),
-                  }}
-                />
-              )}
-              {index < currentIndex && (
-                <View className="h-full bg-white rounded" />
-              )}
+    <Modal
+      visible={visible}
+      animationType="fade"
+      presentationStyle="fullScreen"
+      onRequestClose={onClose}
+    >
+      <View style={{ flex: 1, backgroundColor: 'black' }} {...panResponder.panHandlers}>
+        <SafeAreaView style={{ flex: 1 }}>
+          {/* Header with progress bar */}
+          <View style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 10,
+            paddingTop: 50,
+            paddingHorizontal: 16,
+            paddingBottom: 16
+          }}>
+            {/* Progress bar */}
+            <View style={{
+              height: 4,
+              backgroundColor: 'rgba(255, 255, 255, 0.3)',
+              borderRadius: 2,
+              marginBottom: 16
+            }}>
+              <View style={{
+                height: '100%',
+                backgroundColor: 'white',
+                borderRadius: 2,
+                width: `${progress * 100}%`
+              }} />
             </View>
-          ))}
-        </View>
-      </SafeAreaView>
 
-      {/* Snap Content */}
-      <Pressable 
-        className="flex-1" 
-        onPress={handleTapToProgress}
-        style={{ backgroundColor: 'black' }}
-      >
-        {currentSnap.message_type === 'image' && currentSnap.image_url ? (
-          <Image
-            source={{ uri: currentSnap.image_url }}
-            className="flex-1 w-full"
-            resizeMode="contain"
-          />
-        ) : (
-          <VideoView
-            player={videoPlayer}
-            style={{ flex: 1, width: '100%' }}
-            contentFit="contain"
-            allowsFullscreen={false}
-            showsTimecodes={false}
-            nativeControls={false}
-          />
-        )}
-      </Pressable>
+            {/* Header info */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: '#4F46E5',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 12
+                }}>
+                  <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 14 }}>
+                    {senderName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>
+                  {senderName}
+                </Text>
+              </View>
 
-      {/* Header with time and sender info */}
-      <View className="absolute top-16 left-0 right-0 flex-row items-center justify-between px-4">
-        <View className="flex-row items-center">
-          <View className="w-8 h-8 rounded-full bg-white/20 items-center justify-center mr-2">
-            <Text className="text-white text-xs font-bold">
-              {currentSnap.sender?.display_name?.charAt(0) || '?'}
+              <TouchableOpacity onPress={onClose}>
+                <Ionicons name="close" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Main content area */}
+          <Animated.View style={{ 
+            flex: 1, 
+            opacity: fadeAnim,
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            {isLoading ? (
+              <View style={{ alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="white" />
+                <Text style={{ color: 'white', marginTop: 16 }}>
+                  Loading snap...
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={{ flex: 1, width: '100%' }}
+                onPress={handleTapToStart}
+                onLongPress={handleLongPress}
+                activeOpacity={1}
+              >
+                {isVideo ? (
+                  <VideoView
+                    player={videoPlayer}
+                    style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
+                    contentFit="contain"
+                    allowsFullscreen={false}
+                    nativeControls={false}
+                  />
+                ) : (
+                  <Image
+                    source={{ uri: snap.image_url! }}
+                    style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
+                    resizeMode="contain"
+                  />
+                )}
+              </TouchableOpacity>
+            )}
+
+            {/* Pause indicator */}
+            {isPaused && hasStartedViewing && (
+              <View style={{
+                position: 'absolute',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                borderRadius: 50,
+                width: 80,
+                height: 80
+              }}>
+                <Ionicons name="pause" size={32} color="white" />
+              </View>
+            )}
+
+            {/* Tap to start indicator */}
+            {!hasStartedViewing && !isLoading && (
+              <View style={{
+                position: 'absolute',
+                bottom: 100,
+                alignItems: 'center'
+              }}>
+                <View style={{
+                  backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                  paddingHorizontal: 20,
+                  paddingVertical: 12,
+                  borderRadius: 20
+                }}>
+                  <Text style={{ color: 'white', fontSize: 16 }}>
+                    Tap to view • Hold to pause
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Replay button */}
+            {showReplayButton && (
+              <View style={{
+                position: 'absolute',
+                bottom: 100,
+                alignItems: 'center'
+              }}>
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                    paddingHorizontal: 24,
+                    paddingVertical: 12,
+                    borderRadius: 25,
+                    flexDirection: 'row',
+                    alignItems: 'center'
+                  }}
+                  onPress={handleReplay}
+                >
+                  <Ionicons name="refresh" size={20} color="black" />
+                  <Text style={{ 
+                    color: 'black', 
+                    fontSize: 16, 
+                    fontWeight: '600',
+                    marginLeft: 8 
+                  }}>
+                    Replay ({maxReplays - replayCount} left)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </Animated.View>
+
+          {/* Bottom instructions */}
+          <View style={{
+            position: 'absolute',
+            bottom: 50,
+            left: 16,
+            right: 16,
+            alignItems: 'center'
+          }}>
+            <Text style={{
+              color: 'rgba(255, 255, 255, 0.7)',
+              fontSize: 14,
+              textAlign: 'center'
+            }}>
+              Swipe down to close
             </Text>
           </View>
-          <Text className="text-white font-semibold">
-            {currentSnap.sender?.display_name || 'Someone'}
-          </Text>
-        </View>
-        
-        <View className="flex-row items-center">
-          <Text className="text-white font-bold text-lg mr-3">
-            {timeRemaining}s
-          </Text>
-          <TouchableOpacity onPress={onClose}>
-            <Ionicons name="close" size={24} color="white" />
-          </TouchableOpacity>
-        </View>
+        </SafeAreaView>
       </View>
-
-      {/* Bottom overlay with snap info */}
-      {currentSnap.content && (
-        <View className="absolute bottom-20 left-0 right-0 px-4">
-          <View className="bg-black/50 rounded-lg p-3">
-            <Text className="text-white text-center">
-              {currentSnap.content}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* Replay button (shown after snap ends if replays available) */}
-      {!hasStartedViewing && snapViewInfo.replay_count < snapViewInfo.max_replays && (
-        <View className="absolute bottom-8 left-0 right-0 items-center">
-          <TouchableOpacity
-            className="bg-white/20 px-6 py-3 rounded-full flex-row items-center"
-            onPress={handleReplay}
-          >
-            <Ionicons name="refresh" size={20} color="white" />
-            <Text className="text-white font-semibold ml-2">
-              Replay ({snapViewInfo.max_replays - snapViewInfo.replay_count} left)
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Tap hint */}
-      <View className="absolute bottom-8 right-4">
-        <Text className="text-white/60 text-xs">
-          Tap to skip
-        </Text>
-      </View>
-    </View>
+    </Modal>
   );
 } 

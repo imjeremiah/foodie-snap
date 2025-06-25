@@ -3,7 +3,7 @@
  * Includes text overlays, drawing tools, and color filters with final composition
  */
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -19,14 +19,20 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { manipulateAsync, SaveFormat, FlipType } from "expo-image-manipulator";
+import * as FileSystem from "expo-file-system";
 import { 
   PanGestureHandler,
   GestureHandlerRootView,
   State,
   PanGestureHandlerGestureEvent,
-  GestureEvent,
-  PanGestureHandlerEventPayload,
 } from "react-native-gesture-handler";
+import Animated, { 
+  useSharedValue, 
+  useAnimatedStyle, 
+  useAnimatedGestureHandler,
+  runOnJS,
+  withSpring
+} from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
 import { captureRef } from "react-native-view-shot";
 import { 
@@ -67,11 +73,13 @@ export default function CreativeToolsModal({
   mediaType,
   onSave
 }: CreativeToolsModalProps) {
+  // All state hooks declared unconditionally at the top
   const [toolMode, setToolMode] = useState<ToolMode>('none');
   const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
   const [drawingPaths, setDrawingPaths] = useState<DrawingPath[]>([]);
   const [selectedFilter, setSelectedFilter] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
   
   // Text editing state
   const [editingText, setEditingText] = useState<TextOverlay | null>(null);
@@ -86,20 +94,31 @@ export default function CreativeToolsModal({
   const [brushSize, setBrushSize] = useState(5);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  // Refs for view capture
+  // All refs declared unconditionally
   const canvasRef = useRef<View>(null);
+  const drawingContainerRef = useRef<View>(null);
+  
+  // Track initial positions for text dragging - simplified approach
+  const [dragStartPositions, setDragStartPositions] = useState<Record<string, { x: number; y: number }>>({});
+
+  // Reset image loaded state when modal visibility changes
+  useEffect(() => {
+    if (visible) {
+      setImageLoaded(false);
+    }
+  }, [visible]);
 
   /**
    * Add a new text overlay at center of screen
    */
-  const addTextOverlay = () => {
+  const addTextOverlay = useCallback(() => {
     if (!textInput.trim()) return;
     
     const newOverlay: TextOverlay = {
       id: Date.now().toString(),
       text: textInput,
-      x: SCREEN_WIDTH / 2 - 100,
-      y: CANVAS_HEIGHT / 2 - 50,
+      x: SCREEN_WIDTH / 2 - 50,
+      y: CANVAS_HEIGHT / 2 - 20,
       fontSize: textSize,
       color: selectedTextColor,
       fontWeight: 'bold'
@@ -108,46 +127,69 @@ export default function CreativeToolsModal({
     setTextOverlays(prev => [...prev, newOverlay]);
     setTextInput('');
     setShowTextEditor(false);
-  };
+  }, [textInput, textSize, selectedTextColor]);
 
   /**
    * Remove a text overlay
    */
-  const removeTextOverlay = (id: string) => {
+  const removeTextOverlay = useCallback((id: string) => {
     setTextOverlays(prev => prev.filter(overlay => overlay.id !== id));
-  };
+  }, []);
 
   /**
-   * Handle text drag gesture
+   * Handle text drag gesture - Simplified implementation
    */
-  const handleTextDrag = (event: GestureEvent<PanGestureHandlerEventPayload>, overlayId: string) => {
+  const handleTextDrag = useCallback((event: PanGestureHandlerGestureEvent, overlayId: string) => {
     const { state, translationX, translationY } = event.nativeEvent;
     
-    if (state === State.ACTIVE) {
-      setTextOverlays(prev => prev.map(overlay => {
-        if (overlay.id === overlayId) {
-          return {
-            ...overlay,
-            x: Math.max(0, Math.min(SCREEN_WIDTH - 200, overlay.x + translationX)),
-            y: Math.max(0, Math.min(CANVAS_HEIGHT - 50, overlay.y + translationY))
-          };
-        }
-        return overlay;
-      }));
+    if (state === State.BEGAN) {
+      // Store initial position when drag starts
+      const currentOverlay = textOverlays.find(o => o.id === overlayId);
+      if (currentOverlay) {
+        setDragStartPositions(prev => ({
+          ...prev,
+          [overlayId]: { x: currentOverlay.x, y: currentOverlay.y }
+        }));
+      }
+    } else if (state === State.ACTIVE) {
+      // Update position during drag
+      const startPos = dragStartPositions[overlayId];
+      if (startPos) {
+        const newX = Math.max(0, Math.min(SCREEN_WIDTH - 100, startPos.x + translationX));
+        const newY = Math.max(0, Math.min(CANVAS_HEIGHT - 40, startPos.y + translationY));
+        
+        setTextOverlays(prev => prev.map(overlay => {
+          if (overlay.id === overlayId) {
+            return { ...overlay, x: newX, y: newY };
+          }
+          return overlay;
+        }));
+      }
+    } else if (state === State.END || state === State.CANCELLED) {
+      // Clean up drag state
+      setDragStartPositions(prev => {
+        const newPositions = { ...prev };
+        delete newPositions[overlayId];
+        return newPositions;
+      });
     }
-  };
+  }, [textOverlays, dragStartPositions]);
 
   /**
-   * Handle drawing gesture
+   * Handle drawing gesture - Fixed coordinate handling
    */
-  const handleDrawingGesture = (event: PanGestureHandlerGestureEvent) => {
+  const handleDrawingGesture = useCallback((event: PanGestureHandlerGestureEvent) => {
     const { state, x, y } = event.nativeEvent;
+    
+    // Ensure coordinates are within bounds
+    const drawX = Math.max(0, Math.min(SCREEN_WIDTH, x));
+    const drawY = Math.max(0, Math.min(CANVAS_HEIGHT, y));
     
     if (state === State.BEGAN) {
       setIsDrawing(true);
-      setCurrentPath(`M${x},${y}`);
+      setCurrentPath(`M${drawX},${drawY}`);
     } else if (state === State.ACTIVE && isDrawing) {
-      setCurrentPath(prev => `${prev} L${x},${y}`);
+      setCurrentPath(prev => `${prev} L${drawX},${drawY}`);
     } else if (state === State.END || state === State.CANCELLED) {
       if (currentPath && isDrawing) {
         const newPath: DrawingPath = {
@@ -157,24 +199,27 @@ export default function CreativeToolsModal({
           strokeWidth: brushSize
         };
         setDrawingPaths(prev => [...prev, newPath]);
-        setCurrentPath('');
       }
+      setCurrentPath('');
       setIsDrawing(false);
     }
-  };
+  }, [currentPath, isDrawing, selectedDrawingColor, brushSize]);
 
   /**
    * Clear all drawings
    */
-  const clearDrawings = () => {
+  const clearDrawings = useCallback(() => {
     setDrawingPaths([]);
     setCurrentPath('');
-  };
+    setIsDrawing(false);
+  }, []);
 
   /**
-   * Apply all edits and compose final image using view capture
+   * Apply all edits and compose final image using view capture - Fixed implementation
    */
-  const applyEditsAndSave = async () => {
+  const applyEditsAndSave = useCallback(async () => {
+    if (isProcessing) return;
+    
     setIsProcessing(true);
     
     try {
@@ -192,14 +237,44 @@ export default function CreativeToolsModal({
         return;
       }
       
+      // Ensure image is loaded before capture
+      if (!imageLoaded) {
+        throw new Error('Image not loaded yet');
+      }
+      
+      // Give a small delay to ensure the view is fully rendered
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       // Capture the edited view as an image
       if (canvasRef.current) {
+        console.log('Starting capture process...', { 
+          imageLoaded, 
+          hasEdits, 
+          mediaUri,
+          textOverlaysCount: textOverlays.length,
+          drawingPathsCount: drawingPaths.length,
+          selectedFilter,
+          canvasWidth: SCREEN_WIDTH,
+          canvasHeight: CANVAS_HEIGHT
+        });
+        
         const uri = await captureRef(canvasRef.current, {
           format: 'jpg',
           quality: 0.9,
           result: 'tmpfile',
+          width: SCREEN_WIDTH,
+          height: CANVAS_HEIGHT,
         });
         
+        console.log('Captured image URI:', uri);
+        
+        // Verify the file exists
+        const fileInfo = await FileSystem.getInfoAsync(uri);
+        if (!fileInfo.exists) {
+          throw new Error('Captured image file does not exist');
+        }
+        
+        console.log('File verified, size:', fileInfo.size, 'bytes');
         onSave(uri);
         
         Alert.alert(
@@ -208,111 +283,187 @@ export default function CreativeToolsModal({
           [{ text: "OK", onPress: onClose }]
         );
       } else {
-        throw new Error('Unable to capture edited image');
+        throw new Error('Canvas reference not available');
       }
       
     } catch (error) {
       console.error('Error applying edits:', error);
-      Alert.alert("Error", "Failed to apply edits. Please try again.");
+      Alert.alert(
+        "Error", 
+        `Failed to apply edits: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`
+      );
     } finally {
       setIsProcessing(false);
     }
-  };
+  }, [isProcessing, textOverlays.length, drawingPaths.length, selectedFilter, mediaUri, onSave, onClose]);
 
   /**
    * Reset all edits
    */
-  const resetEdits = () => {
+  const resetEdits = useCallback(() => {
     setTextOverlays([]);
     setDrawingPaths([]);
     setSelectedFilter(0);
     setCurrentPath('');
+    setIsDrawing(false);
     setToolMode('none');
-  };
+    setDragStartPositions({});
+    // Don't reset imageLoaded - keep the image visible
+    // setImageLoaded(false);
+  }, []);
 
   /**
    * Get current filter style for real-time preview
    */
-  const getImageStyle = () => {
-    const baseStyle = {
+  const getImageStyle = useCallback(() => {
+    return {
       width: SCREEN_WIDTH,
       height: CANVAS_HEIGHT,
       resizeMode: 'contain' as const
     };
-
-    return baseStyle;
-  };
+  }, []);
 
   /**
-   * Get filter overlay for visual effects that actually work
+   * Get filter overlay for more realistic visual effects
    */
-  const getFilterOverlay = () => {
+  const getFilterOverlay = useCallback(() => {
     if (selectedFilter === 0) return null;
     
     const filter = COLOR_FILTERS[selectedFilter];
-    let overlayColor = 'transparent';
-    let overlayOpacity = 0;
-    let blendMode: any = 'normal';
     
     switch (filter.name) {
       case 'Warm':
-        overlayColor = '#FFA500';
-        overlayOpacity = 0.2;
-        blendMode = 'multiply';
-        break;
+        return (
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: SCREEN_WIDTH,
+              height: CANVAS_HEIGHT,
+              backgroundColor: '#FFA500',
+              opacity: 0.25,
+              pointerEvents: 'none',
+            }}
+          />
+        );
+    
       case 'Cool':
-        overlayColor = '#87CEEB';
-        overlayOpacity = 0.2;
-        blendMode = 'multiply';
-        break;
+        return (
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: SCREEN_WIDTH,
+              height: CANVAS_HEIGHT,
+              backgroundColor: '#4A90E2',
+              opacity: 0.3,
+              pointerEvents: 'none',
+            }}
+          />
+        );
+    
       case 'Vintage':
-        overlayColor = '#DEB887';
-        overlayOpacity = 0.3;
-        blendMode = 'overlay';
-        break;
+        return (
+          <>
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: SCREEN_WIDTH,
+                height: CANVAS_HEIGHT,
+                backgroundColor: '#D2B48C',
+                opacity: 0.4,
+                pointerEvents: 'none',
+              }}
+            />
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: SCREEN_WIDTH,
+                height: CANVAS_HEIGHT,
+                backgroundColor: '#8B4513',
+                opacity: 0.15,
+                pointerEvents: 'none',
+              }}
+            />
+          </>
+        );
+    
       case 'Dramatic':
-        overlayColor = '#000000';
-        overlayOpacity = 0.15;
-        blendMode = 'multiply';
-        break;
+        return (
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: SCREEN_WIDTH,
+              height: CANVAS_HEIGHT,
+              backgroundColor: '#1A1A1A',
+              opacity: 0.3,
+              pointerEvents: 'none',
+            }}
+          />
+        );
+    
       case 'B&W':
-        // For B&W, we'll use a more drastic overlay
-        overlayColor = '#808080';
-        overlayOpacity = 0.8;
-        blendMode = 'saturation';
-        break;
+        return (
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: SCREEN_WIDTH,
+              height: CANVAS_HEIGHT,
+              backgroundColor: '#000000',
+              opacity: 0.6,
+              pointerEvents: 'none',
+            }}
+          />
+        );
+    
       case 'Sepia':
-        overlayColor = '#DEB887';
-        overlayOpacity = 0.4;
-        blendMode = 'multiply';
-        break;
+        return (
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: SCREEN_WIDTH,
+              height: CANVAS_HEIGHT,
+              backgroundColor: '#D2B48C',
+              opacity: 0.5,
+              pointerEvents: 'none',
+            }}
+          />
+        );
+    
       case 'High Contrast':
-        overlayColor = '#FFFFFF';
-        overlayOpacity = 0.1;
-        blendMode = 'overlay';
-        break;
-    }
+        return (
+          <View
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: SCREEN_WIDTH,
+              height: CANVAS_HEIGHT,
+              backgroundColor: '#FFFFFF',
+              opacity: 0.2,
+              pointerEvents: 'none',
+            }}
+          />
+        );
     
-    if (overlayOpacity > 0) {
-      return (
-        <View
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: SCREEN_WIDTH,
-            height: CANVAS_HEIGHT,
-            backgroundColor: overlayColor,
-            opacity: overlayOpacity,
-            pointerEvents: 'none',
-          }}
-        />
-      );
+      default:
+        return null;
     }
-    
-    return null;
-  };
+  }, [selectedFilter]);
 
+  // Don't render if not visible
   if (!visible) return null;
 
   return (
@@ -332,8 +483,8 @@ export default function CreativeToolsModal({
             <Text className="text-lg font-bold text-white">Edit</Text>
             <TouchableOpacity
               onPress={applyEditsAndSave}
-              disabled={isProcessing}
-              className={`${isProcessing ? 'opacity-50' : ''}`}
+              disabled={isProcessing || !imageLoaded}
+              className={`${(isProcessing || !imageLoaded) ? 'opacity-50' : ''}`}
             >
               {isProcessing ? (
                 <ActivityIndicator size="small" color="white" />
@@ -346,33 +497,74 @@ export default function CreativeToolsModal({
           {/* Main editing area - This will be captured */}
           <View 
             ref={canvasRef} 
-            className="flex-1 relative"
-            style={{ backgroundColor: '#000000' }}
+            style={{ 
+              backgroundColor: '#000000',
+              width: SCREEN_WIDTH,
+              height: CANVAS_HEIGHT,
+              position: 'relative',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
           >
             {/* Base image */}
             <Image
               source={{ uri: mediaUri }}
-              style={getImageStyle()}
+              style={{
+                width: SCREEN_WIDTH,
+                height: CANVAS_HEIGHT,
+                resizeMode: 'contain',
+                position: 'absolute',
+                top: 0,
+                left: 0
+              }}
+              onLoad={() => {
+                console.log('Image loaded successfully');
+                setImageLoaded(true);
+              }}
+              onError={(error) => {
+                console.error('Image load error:', error);
+                setImageLoaded(false);
+              }}
             />
+            
+            {/* Loading indicator */}
+            {!imageLoaded && (
+              <View style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: SCREEN_WIDTH,
+                height: CANVAS_HEIGHT,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: 'rgba(0, 0, 0, 0.5)'
+              }}>
+                <ActivityIndicator size="large" color="white" />
+                <Text style={{ color: 'white', marginTop: 10 }}>Loading image...</Text>
+              </View>
+            )}
             
             {/* Filter overlay for visual effects */}
             {getFilterOverlay()}
             
-            {/* Text overlays - Now draggable! */}
+            {/* Text overlays - Draggable and interactive */}
             {textOverlays.map((overlay) => (
               <PanGestureHandler
                 key={overlay.id}
                 onGestureEvent={(event) => handleTextDrag(event, overlay.id)}
                 enabled={toolMode === 'text'}
               >
-                <View
+                <Animated.View
                   style={{
                     position: 'absolute',
                     left: overlay.x,
                     top: overlay.y,
                   }}
                 >
-                  <TouchableOpacity onPress={() => removeTextOverlay(overlay.id)}>
+                  <TouchableOpacity
+                    onPress={() => toolMode === 'text' && removeTextOverlay(overlay.id)}
+                    activeOpacity={0.8}
+                  >
                     <Text
                       style={{
                         fontSize: overlay.fontSize,
@@ -381,87 +573,82 @@ export default function CreativeToolsModal({
                         textShadowColor: 'rgba(0, 0, 0, 0.75)',
                         textShadowOffset: { width: 1, height: 1 },
                         textShadowRadius: 2,
-                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        backgroundColor: toolMode === 'text' ? 'rgba(0, 100, 255, 0.2)' : 'transparent',
                         paddingHorizontal: 8,
                         paddingVertical: 4,
                         borderRadius: 4,
+                        borderWidth: toolMode === 'text' ? 1 : 0,
+                        borderColor: toolMode === 'text' ? '#0064FF' : 'transparent',
                       }}
                     >
                       {overlay.text}
                     </Text>
                   </TouchableOpacity>
-                </View>
+                </Animated.View>
               </PanGestureHandler>
             ))}
             
-            {/* Drawing overlay - Fixed SVG implementation */}
-            <View
+            {/* Drawing SVG overlay */}
+            <Svg
+              width={SCREEN_WIDTH}
+              height={CANVAS_HEIGHT}
               style={{
                 position: 'absolute',
                 top: 0,
                 left: 0,
-                width: SCREEN_WIDTH,
-                height: CANVAS_HEIGHT,
               }}
-              pointerEvents={toolMode === 'draw' ? 'auto' : 'none'}
+              pointerEvents="none"
             >
-              <Svg
-                width={SCREEN_WIDTH}
-                height={CANVAS_HEIGHT}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                }}
-              >
-                {/* Render completed paths */}
-                {drawingPaths.map((pathData) => (
-                  <Path
-                    key={pathData.id}
-                    d={pathData.path}
-                    stroke={pathData.color}
-                    strokeWidth={pathData.strokeWidth}
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                ))}
-                {/* Render current drawing path */}
-                {currentPath && isDrawing && (
-                  <Path
-                    d={currentPath}
-                    stroke={selectedDrawingColor}
-                    strokeWidth={brushSize}
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                )}
-              </Svg>
-              
-              {/* Drawing gesture handler - Fixed */}
-              {toolMode === 'draw' && (
-                <PanGestureHandler 
-                  onGestureEvent={handleDrawingGesture}
-                  shouldCancelWhenOutside={false}
-                >
-                  <View
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: SCREEN_WIDTH,
-                      height: CANVAS_HEIGHT,
-                    }}
-                  />
-                </PanGestureHandler>
+              {/* Render completed paths */}
+              {drawingPaths.map((pathData) => (
+                <Path
+                  key={pathData.id}
+                  d={pathData.path}
+                  stroke={pathData.color}
+                  strokeWidth={pathData.strokeWidth}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ))}
+              {/* Render current drawing path */}
+              {currentPath && isDrawing && (
+                <Path
+                  d={currentPath}
+                  stroke={selectedDrawingColor}
+                  strokeWidth={brushSize}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               )}
-            </View>
+            </Svg>
+            
+            {/* Drawing gesture handler */}
+            {toolMode === 'draw' && (
+              <PanGestureHandler 
+                onGestureEvent={handleDrawingGesture}
+                shouldCancelWhenOutside={false}
+                minDist={0}
+              >
+                <Animated.View
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: SCREEN_WIDTH,
+                    height: CANVAS_HEIGHT,
+                    backgroundColor: 'transparent',
+                  }}
+                />
+              </PanGestureHandler>
+            )}
           </View>
 
           {/* Tool selection */}
           <View className="bg-black/90 p-4">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View className="flex-row items-center justify-between">
+              {/* Main tools */}
               <View className="flex-row space-x-4">
                 {/* Text tool */}
                 <TouchableOpacity
@@ -469,8 +656,9 @@ export default function CreativeToolsModal({
                     toolMode === 'text' ? 'bg-blue-500' : 'bg-gray-700'
                   }`}
                   onPress={() => {
-                    setToolMode(toolMode === 'text' ? 'none' : 'text');
-                    if (toolMode !== 'text') setShowTextEditor(true);
+                    const newMode = toolMode === 'text' ? 'none' : 'text';
+                    setToolMode(newMode);
+                    if (newMode === 'text') setShowTextEditor(true);
                   }}
                 >
                   <Ionicons name="text" size={20} color="white" />
@@ -481,7 +669,10 @@ export default function CreativeToolsModal({
                   className={`h-12 w-12 items-center justify-center rounded-full ${
                     toolMode === 'draw' ? 'bg-green-500' : 'bg-gray-700'
                   }`}
-                  onPress={() => setToolMode(toolMode === 'draw' ? 'none' : 'draw')}
+                  onPress={() => {
+                    const newMode = toolMode === 'draw' ? 'none' : 'draw';
+                    setToolMode(newMode);
+                  }}
                 >
                   <Ionicons name="brush" size={20} color="white" />
                 </TouchableOpacity>
@@ -495,16 +686,16 @@ export default function CreativeToolsModal({
                 >
                   <Ionicons name="color-filter" size={20} color="white" />
                 </TouchableOpacity>
-
-                {/* Clear/Reset */}
-                <TouchableOpacity
-                  className="h-12 w-12 items-center justify-center rounded-full bg-red-500"
-                  onPress={resetEdits}
-                >
-                  <Ionicons name="refresh" size={20} color="white" />
-                </TouchableOpacity>
               </View>
-            </ScrollView>
+
+              {/* Clear/Reset - Always visible */}
+              <TouchableOpacity
+                className="h-12 w-12 items-center justify-center rounded-full bg-red-500"
+                onPress={resetEdits}
+              >
+                <Ionicons name="refresh" size={20} color="white" />
+              </TouchableOpacity>
+            </View>
 
             {/* Tool-specific controls */}
             {toolMode === 'text' && (

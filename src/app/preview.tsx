@@ -3,7 +3,7 @@
  * Shows the captured media and provides Send/Discard functionality for both photos and videos.
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   View, 
   Text, 
@@ -21,11 +21,13 @@ import { VideoView, useVideoPlayer } from "expo-video";
 import { useGetConversationsQuery, useSendPhotoMessageMutation, useSaveToJournalMutation, useSendSnapMessageEnhancedMutation, useCreateStoryMutation } from "../store/slices/api-slice";
 import type { ConversationWithDetails } from "../types/database";
 import CreativeToolsModal from "../components/creative/CreativeToolsModal";
+import { useSession } from "../hooks/use-session";
 
 type MediaType = 'photo' | 'video';
 
 export default function PreviewScreen() {
   const router = useRouter();
+  const { user } = useSession();
   const { mediaUri, mediaType = 'photo' } = useLocalSearchParams<{ 
     mediaUri: string; 
     mediaType: string;
@@ -46,6 +48,8 @@ export default function PreviewScreen() {
   // Creative tools state
   const [showCreativeTools, setShowCreativeTools] = useState(false);
   const [editedMediaUri, setEditedMediaUri] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageLoadError, setImageLoadError] = useState(false);
 
   // API hooks
   const { data: conversations = [], isLoading: loadingConversations } = useGetConversationsQuery();
@@ -56,6 +60,13 @@ export default function PreviewScreen() {
 
   // Determine if this is a video
   const isVideo = mediaType === 'video';
+
+  // Log when editedMediaUri changes
+  useEffect(() => {
+    if (editedMediaUri) {
+      console.log('Preview: editedMediaUri changed to:', editedMediaUri);
+    }
+  }, [editedMediaUri]);
 
   // Create video player for preview
   const videoPlayer = useVideoPlayer(
@@ -106,13 +117,25 @@ export default function PreviewScreen() {
    */
   const sendToConversation = async (conversation: ConversationWithDetails) => {
     const currentUri = getCurrentMediaUri();
-    if (!currentUri) return;
+    if (!currentUri) {
+      Alert.alert("Error", "No media found to send.");
+      return;
+    }
 
+    // Check if user is authenticated
+    if (!user) {
+      Alert.alert("Authentication Error", "Please sign in to send messages.");
+      return;
+    }
+
+    console.log('Sending to conversation:', conversation.id, 'Mode:', sendMode, 'User:', user.id);
     setSending(true);
+    
     try {
       if (sendMode === 'snap') {
         // Send as snap with enhanced features
-        await sendSnapMessage({
+        console.log('Sending snap with settings:', snapSettings);
+        const result = await sendSnapMessage({
           conversation_id: conversation.id,
           imageUri: currentUri,
           viewing_duration: snapSettings.viewingDuration,
@@ -121,6 +144,7 @@ export default function PreviewScreen() {
           options: { quality: 0.8 }
         }).unwrap();
 
+        console.log('Snap sent successfully:', result);
         Alert.alert(
           "Snap Sent!",
           `Snap sent to ${conversation.other_participant.display_name || 'your friend'} (${snapSettings.viewingDuration}s viewing time)`,
@@ -128,13 +152,15 @@ export default function PreviewScreen() {
         );
       } else {
         // Send as regular photo/video
-        await sendPhotoMessage({
+        console.log('Sending regular message');
+        const result = await sendPhotoMessage({
           conversation_id: conversation.id,
           imageUri: currentUri,
           mediaType: mediaType as 'photo' | 'video',
           options: { quality: 0.8 }
         }).unwrap();
 
+        console.log('Photo/video sent successfully:', result);
         Alert.alert(
           `${isVideo ? 'Video' : 'Photo'} Sent!`,
           `${isVideo ? 'Video' : 'Photo'} sent to ${conversation.other_participant.display_name || 'your friend'}`,
@@ -145,11 +171,25 @@ export default function PreviewScreen() {
       setShowSendModal(false);
     } catch (error) {
       console.error(`Failed to send ${sendMode === 'snap' ? 'snap' : mediaType}:`, error);
-      Alert.alert(
-        "Send Failed",
-        `Failed to send ${sendMode === 'snap' ? 'snap' : (isVideo ? 'video' : 'photo')}. Please try again.`,
-        [{ text: "OK" }]
-      );
+      
+      // More detailed error logging
+      if (error && typeof error === 'object') {
+        console.error('Error details:', JSON.stringify(error, null, 2));
+      }
+      
+      let errorMessage = `Failed to send ${sendMode === 'snap' ? 'snap' : (isVideo ? 'video' : 'photo')}.`;
+      
+      // Provide more specific error messages
+      if (error && typeof error === 'object' && 'error' in error) {
+        const errorObj = error as any;
+        if (errorObj.error === "No authenticated user") {
+          errorMessage = "Authentication error. Please try signing out and back in.";
+        } else if (errorObj.error) {
+          errorMessage = `Send failed: ${errorObj.error}`;
+        }
+      }
+      
+      Alert.alert("Send Failed", errorMessage, [{ text: "OK" }]);
     } finally {
       setSending(false);
     }
@@ -238,15 +278,20 @@ export default function PreviewScreen() {
    * Handle saving edited media from creative tools
    */
   const handleSaveEditedMedia = (newEditedUri: string) => {
+    console.log('Preview: Saving edited media URI:', newEditedUri);
     setEditedMediaUri(newEditedUri);
+    setImageLoadError(false); // Reset error state
     setShowCreativeTools(false);
+    // Don't set imageLoading to true here - let the Image component handle it
   };
 
   /**
    * Get the current media URI (edited version if available)
    */
   const getCurrentMediaUri = () => {
-    return editedMediaUri || mediaUri;
+    const uri = editedMediaUri || mediaUri;
+    console.log('Preview: Current media URI:', uri, { editedMediaUri, mediaUri });
+    return uri;
   };
 
   if (!mediaUri) {
@@ -304,11 +349,58 @@ export default function PreviewScreen() {
             nativeControls={true}
           />
         ) : (
-          <Image
-            source={{ uri: getCurrentMediaUri() }}
-            className="h-full w-full"
-            resizeMode="contain"
-          />
+          <View className="flex-1 items-center justify-center w-full">
+            <Image
+              key={getCurrentMediaUri()} // Force re-render when URI changes
+              source={{ uri: getCurrentMediaUri() }}
+              className="h-full w-full"
+              resizeMode="contain"
+              onLoad={() => {
+                console.log('Preview: Image loaded successfully');
+                setImageLoading(false);
+                setImageLoadError(false);
+              }}
+              onError={(error) => {
+                console.error('Preview: Image load error:', error);
+                setImageLoading(false);
+                setImageLoadError(true);
+              }}
+              onLoadStart={() => {
+                console.log('Preview: Image load started');
+                setImageLoading(true);
+                setImageLoadError(false);
+              }}
+              onLoadEnd={() => {
+                console.log('Preview: Image load ended');
+                // Only set loading to false if not already handled by onLoad
+                setTimeout(() => setImageLoading(false), 100);
+              }}
+            />
+            {imageLoading && (
+              <View className="absolute inset-0 items-center justify-center bg-black/50">
+                <ActivityIndicator size="large" color="white" />
+                <Text className="mt-2 text-white">Loading image...</Text>
+              </View>
+            )}
+            {imageLoadError && (
+              <View className="absolute inset-0 items-center justify-center bg-black/70">
+                <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
+                <Text className="mt-4 text-white text-lg font-semibold">Failed to Load Image</Text>
+                <Text className="mt-2 text-white/70 text-center px-4">
+                  The edited image could not be loaded. Using original image.
+                </Text>
+                <TouchableOpacity
+                  className="mt-4 bg-primary px-6 py-3 rounded-lg"
+                  onPress={() => {
+                    setEditedMediaUri(null);
+                    setImageLoadError(false);
+                  }}
+                >
+                  <Text className="text-white font-semibold">Use Original</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
         )}
       </View>
 
