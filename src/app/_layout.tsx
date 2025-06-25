@@ -46,6 +46,13 @@ export default function RootLayout() {
               gestureEnabled: true 
             }} 
           />
+          <Stack.Screen 
+            name="onboarding" 
+            options={{ 
+              presentation: "fullScreenModal",
+              gestureEnabled: false 
+            }} 
+          />
         </Stack>
       </AuthWrapper>
     </Provider>

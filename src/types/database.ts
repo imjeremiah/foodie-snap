@@ -15,6 +15,26 @@ export interface Profile {
   last_snap_date?: string;
   created_at: string;
   updated_at: string;
+  
+  // Nutrition-focused preferences for RAG personalization
+  primary_fitness_goal?: 'muscle_gain' | 'fat_loss' | 'clean_eating' | 'maintenance' | 'athletic_performance' | 'general_health' | null;
+  secondary_fitness_goals?: string[] | null;
+  dietary_restrictions?: string[] | null;
+  allergies?: string[] | null;
+  preferred_cuisines?: string[] | null;
+  preferred_content_style?: 'inspirational' | 'scientific' | 'quick_easy' | 'humorous' | 'detailed' | 'casual' | null;
+  content_tone_preferences?: string[] | null;
+  meal_timing_preference?: 'early_bird' | 'standard' | 'night_owl' | 'flexible' | 'intermittent_fasting' | null;
+  cooking_skill_level?: 'beginner' | 'intermediate' | 'advanced' | 'expert' | null;
+  meal_prep_frequency?: 'daily' | 'weekly' | 'bi_weekly' | 'monthly' | 'rarely' | null;
+  daily_calorie_goal?: number | null;
+  protein_goal_grams?: number | null;
+  carb_preference?: 'low_carb' | 'moderate_carb' | 'high_carb' | 'flexible' | null;
+  activity_level?: 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active' | 'extremely_active' | null;
+  workout_frequency?: 'never' | '1-2_per_week' | '3-4_per_week' | '5-6_per_week' | 'daily' | null;
+  onboarding_completed?: boolean;
+  onboarding_completed_at?: string | null;
+  preferences_last_updated?: string | null;
 }
 
 export interface UserStats {
@@ -321,3 +341,92 @@ export interface StoryFeedItem extends Story {
   is_own_story: boolean;
   total_stories: number; // Number of stories this user has
 }
+
+// Types for Enhanced Onboarding and Nutrition Preferences
+export interface OnboardingStep {
+  id: string;
+  title: string;
+  description: string;
+  completed: boolean;
+}
+
+export interface NutritionPreferences {
+  primary_fitness_goal?: string;
+  secondary_fitness_goals?: string[];
+  dietary_restrictions?: string[];
+  allergies?: string[];
+  preferred_cuisines?: string[];
+  preferred_content_style?: string;
+  content_tone_preferences?: string[];
+  meal_timing_preference?: string;
+  cooking_skill_level?: string;
+  meal_prep_frequency?: string;
+  daily_calorie_goal?: number;
+  protein_goal_grams?: number;
+  carb_preference?: string;
+  activity_level?: string;
+  workout_frequency?: string; // Optional - not collected in onboarding
+}
+
+export interface OnboardingFormData extends NutritionPreferences {
+  display_name?: string;
+  bio?: string;
+}
+
+// Predefined options for dropdowns and multi-select components
+export const FITNESS_GOALS = [
+  { value: 'muscle_gain', label: 'Muscle Gain', emoji: '💪', description: 'Build lean muscle mass' },
+  { value: 'fat_loss', label: 'Fat Loss', emoji: '🔥', description: 'Lose body fat and get lean' },
+  { value: 'clean_eating', label: 'Clean Eating', emoji: '🥗', description: 'Focus on whole, unprocessed foods' },
+  { value: 'maintenance', label: 'Maintenance', emoji: '⚖️', description: 'Maintain current fitness level' },
+  { value: 'athletic_performance', label: 'Athletic Performance', emoji: '🏃', description: 'Enhance sports performance' },
+  { value: 'general_health', label: 'General Health', emoji: '❤️', description: 'Overall health and wellness' },
+] as const;
+
+export const DIETARY_RESTRICTIONS = [
+  { value: 'vegetarian', label: 'Vegetarian', emoji: '🌱' },
+  { value: 'vegan', label: 'Vegan', emoji: '🌿' },
+  { value: 'pescatarian', label: 'Pescatarian', emoji: '🐟' },
+  { value: 'keto', label: 'Keto', emoji: '🥑' },
+  { value: 'paleo', label: 'Paleo', emoji: '🥩' },
+  { value: 'gluten_free', label: 'Gluten-Free', emoji: '🚫🌾' },
+  { value: 'dairy_free', label: 'Dairy-Free', emoji: '🚫🥛' },
+  { value: 'low_sodium', label: 'Low Sodium', emoji: '🧂' },
+  { value: 'diabetic_friendly', label: 'Diabetic-Friendly', emoji: '📊' },
+] as const;
+
+export const COMMON_ALLERGIES = [
+  { value: 'nuts', label: 'Tree Nuts', emoji: '🥜' },
+  { value: 'peanuts', label: 'Peanuts', emoji: '🥜' },
+  { value: 'shellfish', label: 'Shellfish', emoji: '🦐' },
+  { value: 'fish', label: 'Fish', emoji: '🐟' },
+  { value: 'dairy', label: 'Dairy', emoji: '🥛' },
+  { value: 'eggs', label: 'Eggs', emoji: '🥚' },
+  { value: 'soy', label: 'Soy', emoji: '🫘' },
+  { value: 'gluten', label: 'Gluten', emoji: '🌾' },
+  { value: 'sesame', label: 'Sesame', emoji: '🌰' },
+] as const;
+
+export const CONTENT_STYLES = [
+  { value: 'inspirational', label: 'Inspirational', emoji: '✨', description: 'Motivational and uplifting' },
+  { value: 'scientific', label: 'Scientific', emoji: '🔬', description: 'Evidence-based and detailed' },
+  { value: 'quick_easy', label: 'Quick & Easy', emoji: '⚡', description: 'Simple and to-the-point' },
+  { value: 'humorous', label: 'Humorous', emoji: '😄', description: 'Fun and entertaining' },
+  { value: 'detailed', label: 'Detailed', emoji: '📝', description: 'Comprehensive explanations' },
+  { value: 'casual', label: 'Casual', emoji: '😊', description: 'Relaxed and friendly' },
+] as const;
+
+export const COOKING_SKILL_LEVELS = [
+  { value: 'beginner', label: 'Beginner', emoji: '👶', description: 'Just starting out' },
+  { value: 'intermediate', label: 'Intermediate', emoji: '👍', description: 'Some experience cooking' },
+  { value: 'advanced', label: 'Advanced', emoji: '👨‍🍳', description: 'Comfortable with complex recipes' },
+  { value: 'expert', label: 'Expert', emoji: '🎯', description: 'Professional-level skills' },
+] as const;
+
+export const ACTIVITY_LEVELS = [
+  { value: 'sedentary', label: 'Sedentary', emoji: '💺', description: 'Mostly sitting/desk work' },
+  { value: 'lightly_active', label: 'Lightly Active', emoji: '🚶', description: 'Light exercise 1-3 days/week' },
+  { value: 'moderately_active', label: 'Moderately Active', emoji: '🏃', description: 'Moderate exercise 3-5 days/week' },
+  { value: 'very_active', label: 'Very Active', emoji: '💪', description: 'Hard exercise 6-7 days/week' },
+  { value: 'extremely_active', label: 'Extremely Active', emoji: '🔥', description: 'Very hard exercise or physical job' },
+] as const;

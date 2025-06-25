@@ -15,7 +15,8 @@ import {
   useAcceptFriendRequestMutation,
   useRejectFriendRequestMutation,
   useRemoveFriendMutation,
-  useBlockUserMutation
+  useBlockUserMutation,
+  useResetOnboardingMutation
 } from "../../store/slices/api-slice";
 
 export default function ProfileScreen() {
@@ -27,6 +28,7 @@ export default function ProfileScreen() {
   const [rejectFriendRequest] = useRejectFriendRequestMutation();
   const [removeFriend] = useRemoveFriendMutation();
   const [blockUser] = useBlockUserMutation();
+  const [resetOnboarding] = useResetOnboardingMutation();
 
   /**
    * Handle sign out with confirmation
@@ -44,6 +46,35 @@ export default function ProfileScreen() {
             const { error } = await signOut();
             if (error) {
               Alert.alert("Error", "Failed to sign out");
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  /**
+   * Handle onboarding reset for testing
+   */
+  const handleResetOnboarding = () => {
+    Alert.alert(
+      "Reset Onboarding",
+      "This will reset your onboarding status and clear your nutrition preferences. You'll go through the setup process again. This is for testing purposes only.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Reset", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await resetOnboarding().unwrap();
+              Alert.alert(
+                "Onboarding Reset", 
+                "Your onboarding has been reset. The app will restart the setup process.",
+                [{ text: "OK" }]
+              );
+            } catch (error) {
+              Alert.alert("Error", "Failed to reset onboarding");
             }
           }
         },
@@ -404,6 +435,40 @@ export default function ProfileScreen() {
               {loading ? "Signing Out..." : "Sign Out"}
             </Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Developer Testing Section */}
+        <View className="mb-8 space-y-3">
+          <Text className="text-lg font-bold text-foreground">🧪 Testing Tools</Text>
+          
+          <TouchableOpacity 
+            className="flex-row items-center rounded-lg border border-orange-500 bg-orange-50 p-4"
+            onPress={handleResetOnboarding}
+          >
+            <Ionicons name="refresh-outline" size={20} color="#ea580c" />
+            <View className="ml-3 flex-1">
+              <Text className="font-medium text-orange-800">Reset Onboarding</Text>
+              <Text className="text-sm text-orange-600">
+                Test the onboarding flow again
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <View className="rounded-lg border border-blue-500 bg-blue-50 p-4">
+            <Text className="font-medium text-blue-800 mb-2">🤖 Current AI Preferences</Text>
+            <Text className="text-sm text-blue-600">
+              Fitness Goal: {profile?.primary_fitness_goal || "Not set"}
+            </Text>
+            <Text className="text-sm text-blue-600">
+              Content Style: {profile?.preferred_content_style || "Not set"}
+            </Text>
+            <Text className="text-sm text-blue-600">
+              Dietary Restrictions: {profile?.dietary_restrictions?.join(", ") || "None"}
+            </Text>
+            <Text className="text-sm text-blue-600">
+              Onboarding: {profile?.onboarding_completed ? "✅ Completed" : "❌ Not completed"}
+            </Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>

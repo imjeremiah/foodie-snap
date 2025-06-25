@@ -7,8 +7,10 @@ import React, { useState } from "react";
 import { View, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSession } from "../../hooks/use-session";
+import { useGetCurrentProfileQuery } from "../../store/slices/api-slice";
 import SignInScreen from "./SignInScreen";
 import SignUpScreen from "./SignUpScreen";
+import OnboardingScreen from "../onboarding/OnboardingScreen";
 
 interface AuthWrapperProps {
   children: React.ReactNode;
@@ -58,7 +60,36 @@ export default function AuthWrapper({ children }: AuthWrapperProps) {
   }
 
   /**
-   * Show main app content if user is authenticated
+   * Show onboarding if user is authenticated but hasn't completed onboarding
    */
-  return <>{children}</>;
+  const OnboardingCheck = () => {
+    const { data: profile, isLoading: profileLoading } = useGetCurrentProfileQuery();
+    
+    if (profileLoading) {
+      return (
+        <SafeAreaView className="flex-1 bg-background">
+          <View className="flex-1 items-center justify-center">
+            <View className="rounded-lg border border-border bg-card p-6 shadow-lg">
+              <Text className="text-center text-xl font-semibold text-foreground">
+                Setting up your experience...
+              </Text>
+              <Text className="mt-2 text-center text-muted-foreground">
+                Getting your profile ready
+              </Text>
+            </View>
+          </View>
+        </SafeAreaView>
+      );
+    }
+
+    // Check if onboarding is completed
+    if (profile && !profile.onboarding_completed) {
+      return <OnboardingScreen />;
+    }
+
+    // Show main app if onboarding is completed
+    return <>{children}</>;
+  };
+
+  return <OnboardingCheck />;
 } 

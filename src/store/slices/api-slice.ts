@@ -93,6 +93,97 @@ export const apiSlice = createApi({
       invalidatesTags: ["Profile"],
     }),
 
+    // Enhanced nutrition preferences endpoints for RAG personalization
+    updateNutritionPreferences: builder.mutation<Profile, Partial<Profile>>({
+      queryFn: async (preferences) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .from("profiles")
+          .update(preferences)
+          .eq("id", user.id)
+          .select()
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      invalidatesTags: ["Profile"],
+    }),
+
+    completeOnboarding: builder.mutation<Profile, { preferences: Partial<Profile> }>({
+      queryFn: async ({ preferences }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .from("profiles")
+          .update({
+            ...preferences,
+            onboarding_completed: true,
+          })
+          .eq("id", user.id)
+          .select()
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      invalidatesTags: ["Profile"],
+    }),
+
+    getUserPreferencesForRag: builder.query<any, void>({
+      queryFn: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .rpc('get_user_preferences_for_rag');
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      providesTags: ["Profile"],
+    }),
+
+    resetOnboarding: builder.mutation<Profile, void>({
+      queryFn: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .from("profiles")
+          .update({
+            onboarding_completed: false,
+            onboarding_completed_at: null,
+            // Clear nutrition preferences for fresh start
+            primary_fitness_goal: null,
+            secondary_fitness_goals: null,
+            dietary_restrictions: [],
+            allergies: [],
+            preferred_cuisines: [],
+            preferred_content_style: null,
+            content_tone_preferences: [],
+            meal_timing_preference: null,
+            cooking_skill_level: null,
+            meal_prep_frequency: null,
+            daily_calorie_goal: null,
+            protein_goal_grams: null,
+            carb_preference: null,
+            activity_level: null,
+            workout_frequency: null,
+          })
+          .eq("id", user.id)
+          .select()
+          .single();
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      invalidatesTags: ["Profile"],
+    }),
+
     // User Statistics endpoints
     getUserStats: builder.query<CompleteUserStats, void>({
       queryFn: async () => {
@@ -2479,6 +2570,11 @@ export const apiSlice = createApi({
 export const {
   useGetCurrentProfileQuery,
   useUpdateProfileMutation,
+  // Enhanced nutrition preferences endpoints
+  useUpdateNutritionPreferencesMutation,
+  useCompleteOnboardingMutation,
+  useGetUserPreferencesForRagQuery,
+  useResetOnboardingMutation,
   useGetUserStatsQuery,
   useUpdateSnapStatsMutation,
   useIncrementUserStatMutation,
