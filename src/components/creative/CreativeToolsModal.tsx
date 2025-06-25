@@ -24,6 +24,8 @@ import {
   GestureHandlerRootView,
   State,
   PanGestureHandlerGestureEvent,
+  GestureEvent,
+  PanGestureHandlerEventPayload,
 } from "react-native-gesture-handler";
 import Svg, { Path } from "react-native-svg";
 import { captureRef } from "react-native-view-shot";
@@ -116,6 +118,26 @@ export default function CreativeToolsModal({
   };
 
   /**
+   * Handle text drag gesture
+   */
+  const handleTextDrag = (event: GestureEvent<PanGestureHandlerEventPayload>, overlayId: string) => {
+    const { state, translationX, translationY } = event.nativeEvent;
+    
+    if (state === State.ACTIVE) {
+      setTextOverlays(prev => prev.map(overlay => {
+        if (overlay.id === overlayId) {
+          return {
+            ...overlay,
+            x: Math.max(0, Math.min(SCREEN_WIDTH - 200, overlay.x + translationX)),
+            y: Math.max(0, Math.min(CANVAS_HEIGHT - 50, overlay.y + translationY))
+          };
+        }
+        return overlay;
+      }));
+    }
+  };
+
+  /**
    * Handle drawing gesture
    */
   const handleDrawingGesture = (event: PanGestureHandlerGestureEvent) => {
@@ -127,7 +149,7 @@ export default function CreativeToolsModal({
     } else if (state === State.ACTIVE && isDrawing) {
       setCurrentPath(prev => `${prev} L${x},${y}`);
     } else if (state === State.END || state === State.CANCELLED) {
-      if (currentPath) {
+      if (currentPath && isDrawing) {
         const newPath: DrawingPath = {
           id: Date.now().toString(),
           path: currentPath,
@@ -135,9 +157,9 @@ export default function CreativeToolsModal({
           strokeWidth: brushSize
         };
         setDrawingPaths(prev => [...prev, newPath]);
+        setCurrentPath('');
       }
       setIsDrawing(false);
-      setCurrentPath('');
     }
   };
 
@@ -218,23 +240,11 @@ export default function CreativeToolsModal({
       resizeMode: 'contain' as const
     };
 
-    if (selectedFilter === 0) {
-      return baseStyle;
-    }
-
-    const filter = COLOR_FILTERS[selectedFilter];
-    const filterStyle = getFilterStyle(filter);
-    
-    return {
-      ...baseStyle,
-      ...filterStyle,
-      // Add opacity overlay for filter effects
-      opacity: filter.name === 'Dramatic' ? 0.9 : 1,
-    };
+    return baseStyle;
   };
 
   /**
-   * Get filter overlay for visual effects
+   * Get filter overlay for visual effects that actually work
    */
   const getFilterOverlay = () => {
     if (selectedFilter === 0) return null;
@@ -242,35 +252,44 @@ export default function CreativeToolsModal({
     const filter = COLOR_FILTERS[selectedFilter];
     let overlayColor = 'transparent';
     let overlayOpacity = 0;
+    let blendMode: any = 'normal';
     
     switch (filter.name) {
       case 'Warm':
-        overlayColor = '#FFE4B5';
-        overlayOpacity = 0.15;
+        overlayColor = '#FFA500';
+        overlayOpacity = 0.2;
+        blendMode = 'multiply';
         break;
       case 'Cool':
-        overlayColor = '#B0E0E6';
-        overlayOpacity = 0.15;
+        overlayColor = '#87CEEB';
+        overlayOpacity = 0.2;
+        blendMode = 'multiply';
         break;
       case 'Vintage':
         overlayColor = '#DEB887';
-        overlayOpacity = 0.2;
+        overlayOpacity = 0.3;
+        blendMode = 'overlay';
         break;
       case 'Dramatic':
         overlayColor = '#000000';
-        overlayOpacity = 0.1;
+        overlayOpacity = 0.15;
+        blendMode = 'multiply';
         break;
       case 'B&W':
+        // For B&W, we'll use a more drastic overlay
         overlayColor = '#808080';
-        overlayOpacity = 0.3;
+        overlayOpacity = 0.8;
+        blendMode = 'saturation';
         break;
       case 'Sepia':
         overlayColor = '#DEB887';
-        overlayOpacity = 0.25;
+        overlayOpacity = 0.4;
+        blendMode = 'multiply';
         break;
       case 'High Contrast':
-        overlayColor = '#000000';
-        overlayOpacity = 0.05;
+        overlayColor = '#FFFFFF';
+        overlayOpacity = 0.1;
+        blendMode = 'overlay';
         break;
     }
     
@@ -330,7 +349,7 @@ export default function CreativeToolsModal({
             className="flex-1 relative"
             style={{ backgroundColor: '#000000' }}
           >
-            {/* Base image with filter effects */}
+            {/* Base image */}
             <Image
               source={{ uri: mediaUri }}
               style={getImageStyle()}
@@ -339,82 +358,105 @@ export default function CreativeToolsModal({
             {/* Filter overlay for visual effects */}
             {getFilterOverlay()}
             
-            {/* Text overlays */}
+            {/* Text overlays - Now draggable! */}
             {textOverlays.map((overlay) => (
-              <TouchableOpacity
+              <PanGestureHandler
                 key={overlay.id}
-                style={{
-                  position: 'absolute',
-                  left: overlay.x,
-                  top: overlay.y,
-                }}
-                onPress={() => removeTextOverlay(overlay.id)}
+                onGestureEvent={(event) => handleTextDrag(event, overlay.id)}
+                enabled={toolMode === 'text'}
               >
-                <Text
+                <View
                   style={{
-                    fontSize: overlay.fontSize,
-                    color: overlay.color,
-                    fontWeight: overlay.fontWeight,
-                    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-                    textShadowOffset: { width: 1, height: 1 },
-                    textShadowRadius: 2,
+                    position: 'absolute',
+                    left: overlay.x,
+                    top: overlay.y,
                   }}
                 >
-                  {overlay.text}
-                </Text>
-              </TouchableOpacity>
+                  <TouchableOpacity onPress={() => removeTextOverlay(overlay.id)}>
+                    <Text
+                      style={{
+                        fontSize: overlay.fontSize,
+                        color: overlay.color,
+                        fontWeight: overlay.fontWeight,
+                        textShadowColor: 'rgba(0, 0, 0, 0.75)',
+                        textShadowOffset: { width: 1, height: 1 },
+                        textShadowRadius: 2,
+                        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 4,
+                      }}
+                    >
+                      {overlay.text}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </PanGestureHandler>
             ))}
             
-            {/* Drawing overlay */}
-            {(drawingPaths.length > 0 || currentPath) && (
+            {/* Drawing overlay - Fixed SVG implementation */}
+            <View
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: SCREEN_WIDTH,
+                height: CANVAS_HEIGHT,
+              }}
+              pointerEvents={toolMode === 'draw' ? 'auto' : 'none'}
+            >
               <Svg
+                width={SCREEN_WIDTH}
+                height={CANVAS_HEIGHT}
                 style={{
                   position: 'absolute',
                   top: 0,
                   left: 0,
-                  width: SCREEN_WIDTH,
-                  height: CANVAS_HEIGHT,
                 }}
-                pointerEvents={toolMode === 'draw' ? 'auto' : 'none'}
               >
+                {/* Render completed paths */}
                 {drawingPaths.map((pathData) => (
                   <Path
                     key={pathData.id}
                     d={pathData.path}
                     stroke={pathData.color}
                     strokeWidth={pathData.strokeWidth}
-                    fill="transparent"
+                    fill="none"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   />
                 ))}
-                {currentPath && (
+                {/* Render current drawing path */}
+                {currentPath && isDrawing && (
                   <Path
                     d={currentPath}
                     stroke={selectedDrawingColor}
                     strokeWidth={brushSize}
-                    fill="transparent"
+                    fill="none"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   />
                 )}
               </Svg>
-            )}
-            
-            {/* Drawing gesture handler */}
-            {toolMode === 'draw' && (
-              <PanGestureHandler onGestureEvent={handleDrawingGesture}>
-                <View
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: SCREEN_WIDTH,
-                    height: CANVAS_HEIGHT,
-                  }}
-                />
-              </PanGestureHandler>
-            )}
+              
+              {/* Drawing gesture handler - Fixed */}
+              {toolMode === 'draw' && (
+                <PanGestureHandler 
+                  onGestureEvent={handleDrawingGesture}
+                  shouldCancelWhenOutside={false}
+                >
+                  <View
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: SCREEN_WIDTH,
+                      height: CANVAS_HEIGHT,
+                    }}
+                  />
+                </PanGestureHandler>
+              )}
+            </View>
           </View>
 
           {/* Tool selection */}
@@ -467,6 +509,9 @@ export default function CreativeToolsModal({
             {/* Tool-specific controls */}
             {toolMode === 'text' && (
               <View className="mt-4 space-y-3">
+                <Text className="text-white text-sm">
+                  💡 Drag text to move • Tap to delete
+                </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View className="flex-row space-x-2">
                     {TEXT_COLORS.map((color) => (
@@ -505,6 +550,9 @@ export default function CreativeToolsModal({
 
             {toolMode === 'draw' && (
               <View className="mt-4 space-y-3">
+                <Text className="text-white text-sm">
+                  🎨 Draw on the image above
+                </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View className="flex-row space-x-2">
                     {DRAWING_COLORS.map((color) => (
@@ -553,7 +601,7 @@ export default function CreativeToolsModal({
             {toolMode === 'filter' && (
               <View className="mt-4">
                 <Text className="text-white text-sm mb-3">
-                  Tap a filter to preview - Current: {COLOR_FILTERS[selectedFilter].name}
+                  🎭 Current: {COLOR_FILTERS[selectedFilter].name} {selectedFilter > 0 && '(Applied)'}
                 </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View className="flex-row space-x-3">

@@ -32,6 +32,7 @@ export interface ColorFilter {
   hueRotate?: number;
   tint?: string;
   overlay?: string;
+  description?: string;
 }
 
 export interface CompositionOptions {
@@ -42,57 +43,26 @@ export interface CompositionOptions {
 }
 
 /**
- * Get CSS filter string for real-time preview
+ * Get filter style for React Native (simplified approach)
+ * React Native doesn't support CSS filters, so this is mainly for metadata
  */
 export function getFilterStyle(filter: ColorFilter): object {
   if (!filter || filter.name === 'None') {
     return {};
   }
 
-  // Create CSS filter effects for different filter types
-  const filterEffects = [];
-  
-  if (filter.brightness !== undefined) {
-    filterEffects.push(`brightness(${filter.brightness})`);
-  }
-  
-  if (filter.contrast !== undefined) {
-    filterEffects.push(`contrast(${filter.contrast})`);
-  }
-  
-  if (filter.saturate !== undefined) {
-    filterEffects.push(`saturate(${filter.saturate})`);
-  }
-  
-  if (filter.sepia !== undefined) {
-    filterEffects.push(`sepia(${filter.sepia})`);
-  }
-  
-  if (filter.hueRotate !== undefined) {
-    filterEffects.push(`hue-rotate(${filter.hueRotate}deg)`);
-  }
-
+  // Return basic style properties that React Native can handle
   const style: any = {};
   
-  if (filterEffects.length > 0) {
-    // Note: React Native doesn't support CSS filters directly
-    // We'll use tintColor and overlays as approximations
-    if (filter.name === 'B&W') {
-      style.tintColor = '#808080'; // Gray tint for B&W effect
-    } else if (filter.name === 'Sepia') {
-      style.tintColor = '#DEB887'; // Sepia tone
-    } else if (filter.name === 'Warm') {
-      style.tintColor = '#FFE4B5'; // Warm tone
-    } else if (filter.name === 'Cool') {
-      style.tintColor = '#B0E0E6'; // Cool tone
-    }
-  }
+  // Note: We use overlay components for visual effects instead
+  // of trying to apply CSS filters to Image components
   
   return style;
 }
 
 /**
  * Apply color filter to image using expo-image-manipulator
+ * This provides some basic color adjustments
  */
 export async function applyColorFilter(
   imageUri: string,
@@ -109,19 +79,30 @@ export async function applyColorFilter(
     // Apply basic transformations based on filter type
     switch (filter.name) {
       case 'B&W':
-        // Simulate B&W by reducing quality and applying resize
-        manipulateOptions.push({ resize: { width: 1000 } });
+        // For B&W, we could reduce saturation if the API supported it
+        // For now, rely on the overlay approach
         break;
         
       case 'Vintage':
         // Slightly reduce quality for vintage look
-        quality = Math.min(quality, 0.7);
+        quality = Math.min(quality, 0.75);
         break;
         
       case 'High Contrast':
         // Use higher quality to maintain sharpness
         quality = Math.max(quality, 0.95);
         break;
+        
+      case 'Dramatic':
+        // Maintain high quality for dramatic effect
+        quality = Math.max(quality, 0.9);
+        break;
+    }
+    
+    // Apply basic resize to ensure consistent processing
+    if (manipulateOptions.length === 0) {
+      // Just compress with the specified quality
+      manipulateOptions.push({ resize: { width: 1080 } });
     }
     
     const result = await manipulateAsync(
@@ -172,19 +153,19 @@ export async function composeEditedImage(
 }
 
 /**
- * Create a text overlay image (for future implementation)
- * This would require Canvas API or native text rendering
+ * Create text overlay image (for future implementation)
+ * This would require Canvas API or SVG to bitmap conversion
  */
 export async function createTextOverlayImage(
-  overlay: TextOverlay,
+  overlays: TextOverlay[],
   canvasWidth: number,
   canvasHeight: number
 ): Promise<string | null> {
   // Placeholder for text overlay rendering
   // In a full implementation, you would:
-  // 1. Create a Canvas element
+  // 1. Create a Canvas element (React Native doesn't have this)
   // 2. Set canvas dimensions
-  // 3. Draw text with specified styling
+  // 3. Render each text overlay with specified styling
   // 4. Export as base64 or file URI
   
   return null;
@@ -228,23 +209,29 @@ export async function getImageDimensions(imageUri: string): Promise<{ width: num
 }
 
 /**
- * Enhanced color filters with better visual effects
+ * Enhanced color filters with better visual effects for React Native
+ * These work with overlay components rather than CSS filters
  */
 export const COLOR_FILTERS: ColorFilter[] = [
-  { name: 'None' },
+  { 
+    name: 'None',
+    description: 'Original image'
+  },
   { 
     name: 'Warm', 
     brightness: 1.1, 
     contrast: 1.1, 
     saturate: 1.2,
-    tint: '#FFE4B5'
+    tint: '#FFA500',
+    description: 'Warm orange tint'
   },
   { 
     name: 'Cool', 
     brightness: 0.9, 
     contrast: 1.1, 
     saturate: 0.8,
-    tint: '#B0E0E6'
+    tint: '#87CEEB',
+    description: 'Cool blue tint'
   },
   { 
     name: 'Vintage', 
@@ -252,35 +239,40 @@ export const COLOR_FILTERS: ColorFilter[] = [
     contrast: 1.2, 
     saturate: 0.7, 
     sepia: 0.3,
-    tint: '#DEB887'
+    tint: '#DEB887',
+    description: 'Vintage sepia effect'
   },
   { 
     name: 'Dramatic', 
     brightness: 0.8, 
     contrast: 1.4, 
     saturate: 1.3,
-    tint: '#696969'
+    tint: '#000000',
+    description: 'High contrast dramatic'
   },
   { 
     name: 'B&W', 
     brightness: 1.0, 
     contrast: 1.1, 
     saturate: 0,
-    tint: '#808080'
+    tint: '#808080',
+    description: 'Black and white'
   },
   { 
     name: 'Sepia', 
     brightness: 1.0, 
     contrast: 1.0, 
     sepia: 1.0,
-    tint: '#DEB887'
+    tint: '#DEB887',
+    description: 'Classic sepia tone'
   },
   { 
     name: 'High Contrast', 
     brightness: 1.0, 
     contrast: 1.6, 
     saturate: 1.1,
-    tint: '#000000'
+    tint: '#FFFFFF',
+    description: 'Bright high contrast'
   },
 ];
 
