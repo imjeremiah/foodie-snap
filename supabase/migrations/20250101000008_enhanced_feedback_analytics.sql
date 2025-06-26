@@ -304,7 +304,6 @@ GRANT EXECUTE ON FUNCTION record_ai_suggestion(TEXT, TEXT, TEXT, JSONB, UUID) TO
 CREATE INDEX IF NOT EXISTS ai_feedback_analytics_idx 
 ON public.ai_feedback(user_id, suggestion_type, feedback_type, created_at);
 
--- Create index for time-based queries
+-- Create index for time-based queries (removed WHERE clause with NOW() function)
 CREATE INDEX IF NOT EXISTS ai_feedback_time_idx 
-ON public.ai_feedback(user_id, created_at DESC) 
-WHERE created_at >= NOW() - INTERVAL '1 year'; 
+ON public.ai_feedback(user_id, created_at DESC); 

@@ -2036,6 +2036,159 @@ export const apiSlice = createApi({
       providesTags: ["Journal"],
     }),
 
+    // Enhanced semantic search for journal entries (Phase 3, Step 5)
+    searchJournalEntriesSemantic: builder.query<any[], {
+      query_text?: string;
+      meal_types?: string[];
+      dietary_patterns?: string[];
+      nutrition_focus?: string[];
+      ingredients?: string[];
+      similarity_threshold?: number;
+      max_results?: number;
+    }>({
+      queryFn: async ({ 
+        query_text, 
+        meal_types, 
+        dietary_patterns, 
+        nutrition_focus, 
+        ingredients,
+        similarity_threshold = 0.6,
+        max_results = 20 
+      }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Generate embedding for query text if provided
+        let query_embedding = null;
+        if (query_text && query_text.trim()) {
+          try {
+            // In a real implementation, this would call OpenAI embeddings API
+            // For now, we'll pass null and rely on text search
+            console.log('Semantic search query:', query_text);
+          } catch (error) {
+            console.error('Failed to generate embedding for search:', error);
+          }
+        }
+
+        const { data, error } = await supabase.rpc('search_journal_entries_semantic', {
+          user_id_param: user.id,
+          query_text: query_text || null,
+          query_embedding: query_embedding,
+          meal_types: meal_types || null,
+          dietary_patterns: dietary_patterns || null,
+          nutrition_focus_filter: nutrition_focus || null,
+          ingredients_filter: ingredients || null,
+          similarity_threshold,
+          max_results
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || [] };
+      },
+      providesTags: ["Journal"],
+    }),
+
+    // Find similar meals to a specific journal entry
+    findSimilarMeals: builder.query<any[], { entry_id: string; similarity_threshold?: number; max_results?: number }>({
+      queryFn: async ({ entry_id, similarity_threshold = 0.7, max_results = 10 }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase.rpc('find_similar_meals', {
+          user_id_param: user.id,
+          entry_id: entry_id,
+          similarity_threshold,
+          max_results
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || [] };
+      },
+      providesTags: ["Journal"],
+    }),
+
+    // Get journal analytics with AI insights
+    getJournalAnalyticsWithInsights: builder.query<any, { time_range_days?: number }>({
+      queryFn: async ({ time_range_days = 30 }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase.rpc('get_journal_analytics_with_insights', {
+          user_id_param: user.id,
+          time_range_days
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || {} };
+      },
+      providesTags: ["Journal"],
+    }),
+
+    // Analyze journal entry content with AI
+    analyzeJournalEntryContent: builder.mutation<any, { entry_id: string; image_description?: string; user_caption?: string }>({
+      queryFn: async ({ entry_id, image_description, user_caption }) => {
+        const { data, error } = await supabase.rpc('analyze_journal_entry_content', {
+          entry_id,
+          image_description: image_description || null,
+          user_caption: user_caption || null
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      invalidatesTags: ["Journal"],
+    }),
+
+    // Update journal entry with AI analysis
+    updateJournalEntryAnalysis: builder.mutation<boolean, { entry_id: string; analysis_data: any }>({
+      queryFn: async ({ entry_id, analysis_data }) => {
+        const { data, error } = await supabase.rpc('update_journal_entry_analysis', {
+          entry_id,
+          analysis_data
+        });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data };
+      },
+      invalidatesTags: ["Journal"],
+    }),
+
+    // Analyze journal content with Edge Function
+    analyzeJournalContentWithAI: builder.mutation<any, { 
+      entryId: string; 
+      imageUri?: string; 
+      caption?: string; 
+      forceReanalyze?: boolean 
+    }>({
+      queryFn: async ({ entryId, imageUri, caption, forceReanalyze = false }) => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const response = await fetch(`${supabase.supabaseUrl}/functions/v1/analyze-journal-content`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            entryId,
+            imageUri,
+            caption,
+            forceReanalyze
+          })
+        });
+
+        const result = await response.json();
+        
+        if (!response.ok) {
+          return { error: { status: "CUSTOM_ERROR", error: result.error || 'Analysis failed' } };
+        }
+
+        return { data: result };
+      },
+      invalidatesTags: ["Journal"],
+    }),
+
     // Seed demo data for single-device testing
     seedDemoData: builder.mutation<string, void>({
       queryFn: async () => {
@@ -2996,6 +3149,12 @@ export const {
   useOrganizeJournalEntryMutation,
   useReshareFromJournalMutation,
   useGetJournalStatsQuery,
+  useSearchJournalEntriesSemanticQuery,
+  useFindSimilarMealsQuery,
+  useGetJournalAnalyticsWithInsightsQuery,
+  useAnalyzeJournalEntryContentMutation,
+  useUpdateJournalEntryAnalysisMutation,
+  useAnalyzeJournalContentWithAIMutation,
   // Spotlight hooks
   useGetSpotlightFeedQuery,
   useShareToSpotlightMutation,

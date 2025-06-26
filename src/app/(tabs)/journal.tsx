@@ -26,9 +26,12 @@ import {
   useGetJournalStatsQuery,
   useReshareFromJournalMutation,
   useGetConversationsQuery,
-  useShareToSpotlightMutation
+  useShareToSpotlightMutation,
+  useFindSimilarMealsQuery
 } from "../../store/slices/api-slice";
 import type { JournalEntry, ConversationWithDetails } from "../../types/database";
+import SemanticSearchModal from "../../components/journal/SemanticSearchModal";
+import JournalAnalyticsModal from "../../components/journal/JournalAnalyticsModal";
 
 const { width: screenWidth } = Dimensions.get('window');
 const ITEM_SIZE = (screenWidth - 32 - 20) / 3; // 3 columns with padding
@@ -97,6 +100,13 @@ export default function JournalScreen() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showReshareModal, setShowReshareModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // New semantic search and analytics states
+  const [showSemanticSearchModal, setShowSemanticSearchModal] = useState(false);
+  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [showSimilarMealsModal, setShowSimilarMealsModal] = useState(false);
+  const [isSearchMode, setIsSearchMode] = useState(false);
 
   // API hooks
   const { 
@@ -116,6 +126,12 @@ export default function JournalScreen() {
   const [toggleFavorite] = useToggleJournalFavoriteMutation();
   const [reshareFromJournal] = useReshareFromJournalMutation();
   const [shareToSpotlight] = useShareToSpotlightMutation();
+
+  // Similar meals query (only fetch when entry is selected)
+  const { data: similarMeals = [], isLoading: loadingSimilarMeals } = useFindSimilarMealsQuery(
+    { entry_id: selectedEntry?.id || '' },
+    { skip: !selectedEntry?.id || !showSimilarMealsModal }
+  );
 
   /**
    * Handle pull-to-refresh
@@ -166,6 +182,10 @@ export default function JournalScreen() {
           onPress: handleToggleFavorite
         },
         {
+          text: "Find Similar Meals",
+          onPress: () => setShowSimilarMealsModal(true)
+        },
+        {
           text: "Reshare",
           onPress: () => setShowReshareModal(true)
         },
@@ -176,6 +196,37 @@ export default function JournalScreen() {
         }
       ]
     );
+  };
+
+  /**
+   * Handle semantic search results
+   */
+  const handleSemanticSearchResults = (results: any[]) => {
+    setSearchResults(results);
+    setIsSearchMode(true);
+    console.log('Search results:', results);
+  };
+
+  /**
+   * Clear search mode and return to normal journal view
+   */
+  const clearSearchMode = () => {
+    setIsSearchMode(false);
+    setSearchResults([]);
+    setSearchQuery('');
+  };
+
+  /**
+   * Handle entry press for similar meals
+   */
+  const handleSimilarMealPress = (mealEntry: any) => {
+    // Find the full entry data and set it as selected
+    const fullEntry = journalEntries.find(entry => entry.id === mealEntry.id);
+    if (fullEntry) {
+      setSelectedEntry(fullEntry);
+      setShowSimilarMealsModal(false);
+      setShowDetailModal(true);
+    }
   };
 
   /**
@@ -388,9 +439,10 @@ export default function JournalScreen() {
       {/* Stats */}
       {renderStats()}
 
-      {/* Search Bar */}
+      {/* Search Bar and Smart Actions */}
       <View className="mx-4 mt-4 mb-2">
-        <View className="flex-row items-center bg-muted rounded-lg px-3 py-2">
+        {/* Search Bar */}
+        <View className="flex-row items-center bg-muted rounded-lg px-3 py-2 mb-3">
           <Ionicons name="search" size={20} color="#9CA3AF" />
           <TextInput
             className="flex-1 ml-2 text-foreground"
@@ -406,6 +458,40 @@ export default function JournalScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Smart Search and Analytics Buttons */}
+        <View className="flex-row space-x-3">
+          <TouchableOpacity
+            className="flex-1 flex-row items-center justify-center bg-primary rounded-lg px-4 py-3"
+            onPress={() => setShowSemanticSearchModal(true)}
+          >
+            <Ionicons name="sparkles" size={16} color="white" />
+            <Text className="text-primary-foreground font-medium ml-2">Smart Search</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            className="flex-1 flex-row items-center justify-center bg-card border border-border rounded-lg px-4 py-3"
+            onPress={() => setShowAnalyticsModal(true)}
+          >
+            <Ionicons name="analytics" size={16} color="#6366F1" />
+            <Text className="text-foreground font-medium ml-2">Insights</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Search Mode Indicator */}
+        {isSearchMode && (
+          <View className="flex-row items-center justify-between bg-blue-50 rounded-lg px-3 py-2 mt-3">
+            <View className="flex-row items-center">
+              <Ionicons name="sparkles" size={16} color="#3B82F6" />
+              <Text className="text-blue-800 font-medium ml-2">
+                Smart Search Results ({searchResults.length})
+              </Text>
+            </View>
+            <TouchableOpacity onPress={clearSearchMode}>
+              <Ionicons name="close-circle" size={20} color="#3B82F6" />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* Filter Tabs */}
@@ -441,11 +527,11 @@ export default function JournalScreen() {
           <ActivityIndicator size="large" color="hsl(var(--primary))" />
           <Text className="mt-2 text-muted-foreground">Loading journal...</Text>
         </View>
-      ) : journalEntries.length === 0 ? (
+      ) : (isSearchMode ? searchResults : journalEntries).length === 0 ? (
         renderEmptyState()
       ) : (
         <FlatList
-          data={journalEntries}
+          data={isSearchMode ? searchResults : journalEntries}
           keyExtractor={(item) => item.id}
           numColumns={3}
           contentContainerStyle={{ padding: 16, gap: 10 }}
@@ -605,6 +691,104 @@ export default function JournalScreen() {
               </View>
             }
           />
+        </SafeAreaView>
+      </Modal>
+
+      {/* Semantic Search Modal */}
+      <SemanticSearchModal
+        visible={showSemanticSearchModal}
+        onClose={() => setShowSemanticSearchModal(false)}
+        onResultsFound={handleSemanticSearchResults}
+      />
+
+      {/* Analytics Modal */}
+      <JournalAnalyticsModal
+        visible={showAnalyticsModal}
+        onClose={() => setShowAnalyticsModal(false)}
+      />
+
+      {/* Similar Meals Modal */}
+      <Modal
+        visible={showSimilarMealsModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowSimilarMealsModal(false)}
+      >
+        <SafeAreaView className="flex-1 bg-background">
+          <View className="flex-row items-center justify-between p-4 border-b border-border">
+            <View className="flex-row items-center">
+              <Ionicons name="restaurant" size={24} color="#6366F1" />
+              <Text className="text-xl font-bold text-foreground ml-2">
+                Similar Meals
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setShowSimilarMealsModal(false)}
+              className="p-2"
+            >
+              <Ionicons name="close" size={24} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
+
+          {loadingSimilarMeals ? (
+            <View className="flex-1 items-center justify-center">
+              <ActivityIndicator size="large" color="#6366F1" />
+              <Text className="text-muted-foreground mt-2">Finding similar meals...</Text>
+            </View>
+          ) : similarMeals.length === 0 ? (
+            <View className="flex-1 items-center justify-center px-4">
+              <Ionicons name="search" size={48} color="#9CA3AF" />
+              <Text className="text-foreground text-lg font-semibold mt-4">
+                No Similar Meals Found
+              </Text>
+              <Text className="text-muted-foreground text-center mt-2">
+                Try adding more meals to your journal to find similar content
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={similarMeals}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={{ padding: 16 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  className="flex-row bg-card rounded-lg p-4 mb-3 border border-border"
+                  onPress={() => handleSimilarMealPress(item)}
+                >
+                  <Image
+                    source={{ uri: item.image_url }}
+                    className="w-16 h-16 rounded-lg"
+                    resizeMode="cover"
+                  />
+                  <View className="flex-1 ml-4">
+                    <Text className="font-semibold text-foreground mb-1" numberOfLines={2}>
+                      {item.caption || 'Untitled meal'}
+                    </Text>
+                    <View className="flex-row items-center mb-2">
+                      <View className="bg-primary/10 rounded-full px-2 py-1">
+                        <Text className="text-primary text-xs font-medium">
+                          {Math.round(item.similarity * 100)}% similar
+                        </Text>
+                      </View>
+                      {item.meal_type && (
+                        <View className="bg-muted rounded-full px-2 py-1 ml-2">
+                          <Text className="text-muted-foreground text-xs capitalize">
+                            {item.meal_type}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    {item.similarity_reasons && item.similarity_reasons.length > 0 && (
+                      <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+                        {item.similarity_reasons.filter(Boolean).slice(0, 2).join(', ')}
+                      </Text>
+                    )}
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+                </TouchableOpacity>
+              )}
+            />
+          )}
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
