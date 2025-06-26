@@ -10,9 +10,13 @@
     "format": "prettier --write .",
     "db:push": "supabase db push",
     "db:migrate": "supabase migration up",
-    "functions:deploy": "supabase functions deploy generate-smart-captions && supabase functions deploy generate-content-embeddings",
+    "functions:deploy": "supabase functions deploy generate-smart-captions && supabase functions deploy generate-content-embeddings && supabase functions deploy scan-nutrition-label",
+    "functions:deploy:captions": "supabase functions deploy generate-smart-captions",
+    "functions:deploy:embeddings": "supabase functions deploy generate-content-embeddings",
+    "functions:deploy:nutrition": "supabase functions deploy scan-nutrition-label",
     "functions:logs": "supabase functions logs",
     "setup:rag": "npm run db:push && npm run functions:deploy",
+    "test:nutrition": "node test_nutrition_scan.js",
     "secrets:list": "supabase secrets list"
   },
   "dependencies": {

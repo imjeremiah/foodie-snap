@@ -12,6 +12,7 @@ export interface MediaUploadOptions {
   quality?: number;
   maxWidth?: number;
   maxHeight?: number;
+  folder?: string; // Custom folder name for organizing uploads
 }
 
 export interface PhotoUploadOptions extends MediaUploadOptions {
@@ -41,11 +42,22 @@ export interface VideoUploadResult extends MediaUploadResult {}
  * @param userId - The user's ID
  * @param mediaType - The media type ('photo' or 'video')
  * @param fileExtension - The file extension (e.g., 'jpg', 'mp4')
+ * @param customFolder - Optional custom folder name for organizing uploads
  * @returns Formatted filename with user folder structure
  */
-function generateMediaPath(userId: string, mediaType: 'photo' | 'video', fileExtension: string): string {
+function generateMediaPath(
+  userId: string, 
+  mediaType: 'photo' | 'video', 
+  fileExtension: string, 
+  customFolder?: string
+): string {
   const timestamp = Date.now();
   const randomId = Math.random().toString(36).substring(2);
+  
+  if (customFolder) {
+    return `${userId}/${customFolder}/${timestamp}-${randomId}.${fileExtension}`;
+  }
+  
   return `${userId}/${mediaType}s/${timestamp}-${randomId}.${fileExtension}`;
 }
 
@@ -124,7 +136,7 @@ export async function uploadPhoto(
     const arrayBuffer = decode(base64);
 
     // Generate unique file path
-    const filePath = generateMediaPath(user.id, 'photo', 'jpg');
+    const filePath = generateMediaPath(user.id, 'photo', 'jpg', options.folder);
 
     // Upload to Supabase Storage
     const { data: uploadData, error: uploadError } = await supabase.storage
@@ -200,7 +212,7 @@ export async function uploadVideo(
     const arrayBuffer = decode(base64);
 
     // Generate unique file path
-    const filePath = generateMediaPath(user.id, 'video', 'mp4');
+    const filePath = generateMediaPath(user.id, 'video', 'mp4', options.folder);
 
     // Upload to Supabase Storage
     const { data: uploadData, error: uploadError } = await supabase.storage

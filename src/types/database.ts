@@ -497,3 +497,38 @@ export interface SimilarContent {
   similarity: number;
   created_at: string;
 }
+
+// Nutrition scanning types for Scan-a-Snack feature
+export interface NutritionScanRequest {
+  imageUri: string;
+  context?: {
+    scanType: 'ingredient' | 'nutrition_label' | 'food_item';
+    userPreferences?: any;
+  };
+}
+
+export interface NutritionFacts {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber?: number;
+  sugar?: number;
+  sodium?: number;
+}
+
+export interface NutritionCard {
+  foodName: string;
+  nutritionFacts: NutritionFacts;
+  healthInsights: string[];
+  recipeIdeas: string[];
+  confidence: number;
+  aiAnalysis: string;
+}
+
+export interface NutritionScanResponse {
+  success: boolean;
+  nutritionCard?: NutritionCard;
+  error?: string;
+  processingTime?: number;
+}

@@ -40,7 +40,9 @@ import type {
   CaptionGenerationResponse,
   EmbeddingGenerationRequest,
   EmbeddingGenerationResponse,
-  SimilarContent
+  SimilarContent,
+  NutritionScanRequest,
+  NutritionScanResponse
 } from "../../types/database";
 
 /**
@@ -1447,12 +1449,49 @@ export const apiSlice = createApi({
     sendPhotoMessage: builder.mutation<Message, {
       conversation_id: string;
       imageUri: string;
+      content?: string;
       mediaType?: 'photo' | 'video';
       options?: MediaUploadOptions;
     }>({
-      queryFn: async ({ conversation_id, imageUri, mediaType = 'photo', options }) => {
+      queryFn: async ({ conversation_id, imageUri, content, mediaType = 'photo', options }) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Handle text-only messages (like nutrition cards)
+        if (!imageUri || imageUri.trim() === '') {
+          if (!content) {
+            return { error: { status: "CUSTOM_ERROR", error: "No content or media provided" } };
+          }
+          
+          // Send as text message
+          const { data, error } = await supabase
+            .from("messages")
+            .insert({
+              conversation_id,
+              sender_id: user.id,
+              content,
+              message_type: "text"
+            })
+            .select(`
+              *,
+              sender:profiles (
+                id,
+                display_name,
+                avatar_url
+              )
+            `)
+            .single();
+
+          if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+          // Update conversation timestamp
+          await supabase
+            .from("conversations")
+            .update({ updated_at: new Date().toISOString() })
+            .eq("id", conversation_id);
+
+          return { data };
+        }
 
         // First upload the media
         const uploadResult = await uploadMedia(imageUri, mediaType, options);
@@ -1466,6 +1505,7 @@ export const apiSlice = createApi({
           .insert({
             conversation_id,
             sender_id: user.id,
+            content,
             image_url: uploadResult.data!.fullUrl,
             message_type: mediaType === 'video' ? "video" : "image"
           })
@@ -2677,6 +2717,64 @@ export const apiSlice = createApi({
       // Don't invalidate tags since embeddings are background processing
     }),
 
+    scanNutritionLabel: builder.mutation<NutritionScanResponse, NutritionScanRequest>({
+      queryFn: async (request) => {
+        console.log('🔵 Starting nutrition scan...');
+        
+        // Get current user and fresh session
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+          console.error('❌ User authentication failed:', userError);
+          return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+        }
+
+        // Get fresh session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session?.access_token) {
+          console.error('❌ Session authentication failed:', sessionError);
+          return { error: { status: "CUSTOM_ERROR", error: "No authenticated session" } };
+        }
+
+        console.log('🔵 User and session authenticated, calling nutrition scan function...');
+
+        try {
+          const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/scan-nutrition-label`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+              'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+            },
+            body: JSON.stringify(request),
+          });
+
+          console.log('🔵 Nutrition scan function response status:', response.status);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Nutrition scan function error response:', errorText);
+            
+            // Try to parse as JSON if possible for better error messages
+            try {
+              const errorJson = JSON.parse(errorText);
+              return { error: { status: "CUSTOM_ERROR", error: errorJson.error || errorText } };
+            } catch {
+              return { error: { status: "CUSTOM_ERROR", error: `Nutrition scan failed: ${errorText}` } };
+            }
+          }
+
+          const data = await response.json();
+          console.log('✅ Nutrition scan successful');
+          return { data };
+          
+        } catch (networkError) {
+          console.error('❌ Network error calling nutrition scan function:', networkError);
+          return { error: { status: "CUSTOM_ERROR", error: `Network error: ${networkError.message}` } };
+        }
+      },
+      // Don't invalidate any tags since this doesn't modify persistent data
+    }),
+
     storeAiFeedback: builder.mutation<string, {
       suggestion_type: 'caption' | 'nutrition' | 'recipe' | 'prompt';
       suggestion_id: string;
@@ -2895,6 +2993,7 @@ export const {
   // RAG & AI hooks
   useGenerateSmartCaptionsMutation,
   useGenerateContentEmbeddingsMutation,
+  useScanNutritionLabelMutation,
   useStoreAiFeedbackMutation,
   useSearchSimilarContentQuery,
   useGetUserContentEmbeddingsQuery,

@@ -4,11 +4,15 @@
  */
 
 import React, { useState, useRef, useEffect } from "react";
-import { View, Text, TouchableOpacity, Alert, StyleSheet, Animated } from "react-native";
+import { View, Text, TouchableOpacity, Alert, StyleSheet, Animated, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CameraView, CameraType, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useScanNutritionLabelMutation, useStoreAiFeedbackMutation } from "../../store/slices/api-slice";
+import { uploadMedia } from "../../lib/storage";
+import NutritionCard from "../../components/nutrition/NutritionCard";
+import type { NutritionCard as NutritionCardType } from "../../types/database";
 
 export default function CameraScreen() {
   const [facing, setFacing] = useState<CameraType>("back");
@@ -25,6 +29,15 @@ export default function CameraScreen() {
   const pressStartTimeRef = useRef<number>(0);
   const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isHoldingRef = useRef<boolean>(false);
+
+  // Scan mode state
+  const [scanMode, setScanMode] = useState<'camera' | 'scan' | 'processing'>('camera');
+  const [nutritionCard, setNutritionCard] = useState<NutritionCardType | null>(null);
+  const [showNutritionModal, setShowNutritionModal] = useState(false);
+
+  // API hooks
+  const [scanNutritionLabel] = useScanNutritionLabelMutation();
+  const [storeAiFeedback] = useStoreAiFeedbackMutation();
 
   /**
    * Cleanup timers on component unmount
@@ -284,12 +297,143 @@ export default function CameraScreen() {
       // If we're recording, stop the recording
       stopVideoRecording();
     } else if (!isHoldingRef.current && pressDuration < 300) {
-      // If it was a quick tap (< 300ms) and we're not recording, take a photo
-      takePicture();
+      // If it was a quick tap (< 300ms) and we're not recording, take appropriate action
+      if (scanMode === 'scan') {
+        scanCurrentView();
+      } else {
+        takePicture();
+      }
     }
     
     // Reset hold state
     isHoldingRef.current = false;
+  }
+
+  /**
+   * Toggle scan mode
+   */
+  function toggleScanMode() {
+    if (isRecording) return; // Don't allow mode changes while recording
+    
+    setScanMode(current => current === 'scan' ? 'camera' : 'scan');
+    setNutritionCard(null);
+  }
+
+  /**
+   * Scan current camera view for nutrition information
+   */
+  async function scanCurrentView() {
+    if (!cameraRef.current || isRecording) return;
+
+    try {
+      setScanMode('processing');
+      
+      // Take a photo for scanning
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.8,
+        base64: false,
+      });
+      
+      if (!photo) {
+        throw new Error('Failed to capture photo for scanning');
+      }
+
+      console.log('📸 Photo captured, uploading to storage...');
+
+      // Upload image to Supabase Storage to get a public URL
+      const uploadResult = await uploadMedia(photo.uri, 'photo', {
+        quality: 0.8,
+        folder: 'nutrition-scans' // Use a specific folder for nutrition scans
+      });
+
+      if (!uploadResult.success || !uploadResult.data) {
+        throw new Error(uploadResult.error || 'Failed to upload image for scanning');
+      }
+
+      console.log('✅ Image uploaded, public URL:', uploadResult.data.fullUrl);
+
+      // Call nutrition scan API with the public URL
+      const result = await scanNutritionLabel({
+        imageUri: uploadResult.data.fullUrl, // Use the public URL instead of local file path
+        context: {
+          scanType: 'food_item', // Default to food item, could be made configurable
+        }
+      }).unwrap();
+
+      if (result.success && result.nutritionCard) {
+        setNutritionCard(result.nutritionCard);
+        setShowNutritionModal(true);
+      } else {
+        throw new Error(result.error || 'Nutrition scan failed');
+      }
+    } catch (error) {
+      console.error('Nutrition scan error:', error);
+      
+      let errorMessage = "Unable to analyze this image. Please ensure the food item or nutrition label is clearly visible and try again.";
+      
+      // Provide more specific error messages
+      if (error && typeof error === 'object' && 'error' in error) {
+        const errorStr = String(error.error);
+        if (errorStr.includes('upload')) {
+          errorMessage = "Failed to upload image for analysis. Please check your internet connection and try again.";
+        } else if (errorStr.includes('OpenAI')) {
+          errorMessage = "AI analysis service is temporarily unavailable. Please try again in a moment.";
+        }
+      }
+      
+      Alert.alert(
+        "Scan Failed",
+        errorMessage,
+        [{ text: "OK" }]
+      );
+    } finally {
+      setScanMode('scan'); // Return to scan mode
+    }
+  }
+
+  /**
+   * Handle nutrition card feedback
+   */
+  function handleNutritionFeedback(type: 'thumbs_up' | 'thumbs_down', section: string) {
+    if (!nutritionCard) return;
+
+    const suggestionId = `nutrition_${Date.now()}_${section}`;
+    storeAiFeedback({
+      suggestion_type: 'nutrition',
+      suggestion_id: suggestionId,
+      feedback_type: type,
+      original_suggestion: section === 'health_insights' 
+        ? nutritionCard.healthInsights.join('; ')
+        : nutritionCard.recipeIdeas.join('; '),
+      context_metadata: {
+        food_name: nutritionCard.foodName,
+        section,
+        confidence: nutritionCard.confidence,
+        timestamp: new Date().toISOString()
+      }
+    }).catch(error => {
+      console.error('Failed to store nutrition feedback:', error);
+    });
+  }
+
+  /**
+   * Handle sharing nutrition card
+   */
+  function handleShareNutritionCard() {
+    if (!nutritionCard) return;
+    
+    // Close the modal first
+    setShowNutritionModal(false);
+    
+    // Navigate to preview screen with nutrition card data for sharing
+    router.push({
+      pathname: "/preview",
+      params: { 
+        mediaUri: 'nutrition-card', // Special flag for nutrition card
+        mediaType: 'nutrition-card',
+        nutritionCardData: JSON.stringify(nutritionCard)
+      },
+    });
   }
 
   return (
@@ -324,7 +468,22 @@ export default function CameraScreen() {
           {!isRecording && (
             <View style={styles.instructionsContainer}>
               <Text style={styles.instructionsText}>
-                Tap for photo • Hold for video
+                {scanMode === 'scan' 
+                  ? "Tap to scan nutrition • Hold for video"
+                  : scanMode === 'processing'
+                  ? "Processing image with AI..."
+                  : "Tap for photo • Hold for video"
+                }
+              </Text>
+            </View>
+          )}
+
+          {/* Scan mode overlay */}
+          {scanMode === 'scan' && (
+            <View style={styles.scanOverlay}>
+              <View style={styles.scanFrame} />
+              <Text style={styles.scanHint}>
+                Point camera at food item or nutrition label
               </Text>
             </View>
           )}
@@ -332,13 +491,17 @@ export default function CameraScreen() {
           {/* Bottom controls */}
           <View style={styles.bottomControls}>
             <View style={styles.controlsRow}>
-              {/* Flip camera button */}
+              {/* Scan button */}
               <TouchableOpacity
-                style={styles.flipButton}
-                onPress={toggleCameraFacing}
-                disabled={isRecording}
+                style={[styles.flipButton, scanMode === 'scan' && styles.scanButtonActive]}
+                onPress={toggleScanMode}
+                disabled={isRecording || scanMode === 'processing'}
               >
-                <Ionicons name="camera-reverse" size={24} color="white" />
+                <Ionicons 
+                  name={scanMode === 'scan' ? "scan" : "nutrition"} 
+                  size={24} 
+                  color={scanMode === 'scan' ? "#22C55E" : "white"} 
+                />
               </TouchableOpacity>
 
               {/* Capture button */}
@@ -363,12 +526,39 @@ export default function CameraScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Placeholder for future features */}
-              <View style={styles.placeholder} />
+              {/* Flip camera button */}
+              <TouchableOpacity
+                style={styles.flipButton}
+                onPress={toggleCameraFacing}
+                disabled={isRecording}
+              >
+                <Ionicons name="camera-reverse" size={24} color="white" />
+              </TouchableOpacity>
             </View>
           </View>
         </SafeAreaView>
       </View>
+
+      {/* Nutrition Card Modal */}
+      <Modal
+        visible={showNutritionModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowNutritionModal(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
+          <View style={{ flex: 1, justifyContent: 'center', padding: 16 }}>
+            {nutritionCard && (
+              <NutritionCard
+                nutritionCard={nutritionCard}
+                onShare={handleShareNutritionCard}
+                onClose={() => setShowNutritionModal(false)}
+                onFeedback={handleNutritionFeedback}
+              />
+            )}
+          </View>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }
@@ -492,8 +682,35 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
   },
-  placeholder: {
-    height: 48,
-    width: 48,
+  scanButtonActive: {
+    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+    borderColor: '#22C55E',
+    borderWidth: 2,
+  },
+  scanOverlay: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -100 }, { translateY: -100 }],
+    alignItems: 'center',
+  },
+  scanFrame: {
+    width: 200,
+    height: 200,
+    borderColor: '#22C55E',
+    borderWidth: 3,
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+    borderStyle: 'dashed',
+  },
+  scanHint: {
+    marginTop: 16,
+    color: 'white',
+    fontSize: 14,
+    textAlign: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
 });

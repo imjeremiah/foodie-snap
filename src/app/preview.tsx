@@ -28,8 +28,9 @@ import {
   useStoreAiFeedbackMutation,
   useGenerateContentEmbeddingsMutation
 } from "../store/slices/api-slice";
-import type { ConversationWithDetails } from "../types/database";
+import type { ConversationWithDetails, NutritionCard as NutritionCardType } from "../types/database";
 import CreativeToolsModal from "../components/creative/CreativeToolsModal";
+import NutritionCard from "../components/nutrition/NutritionCard";
 import { useAuth } from "../contexts/AuthContext";
 
 type MediaType = 'photo' | 'video';
@@ -37,9 +38,10 @@ type MediaType = 'photo' | 'video';
 export default function PreviewScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { mediaUri, mediaType = 'photo' } = useLocalSearchParams<{ 
+  const { mediaUri, mediaType = 'photo', nutritionCardData } = useLocalSearchParams<{ 
     mediaUri: string; 
     mediaType: string;
+    nutritionCardData?: string;
   }>();
   
   // State for send modal and journal saving
@@ -66,6 +68,10 @@ export default function PreviewScreen() {
   const [selectedCaption, setSelectedCaption] = useState<string>('');
   const [isGeneratingCaptions, setIsGeneratingCaptions] = useState(false);
 
+  // Nutrition card state
+  const [nutritionCard, setNutritionCard] = useState<NutritionCardType | null>(null);
+  const isNutritionCard = mediaType === 'nutrition-card';
+
   // API hooks - only fetch conversations when user is authenticated
   const { data: conversations = [], isLoading: loadingConversations } = useGetConversationsQuery(undefined, {
     skip: !user
@@ -82,6 +88,20 @@ export default function PreviewScreen() {
 
   // Determine if this is a video
   const isVideo = mediaType === 'video';
+
+  // Parse nutrition card data on mount
+  useEffect(() => {
+    if (nutritionCardData && isNutritionCard) {
+      try {
+        const parsedCard = JSON.parse(nutritionCardData);
+        setNutritionCard(parsedCard);
+      } catch (error) {
+        console.error('Failed to parse nutrition card data:', error);
+        Alert.alert('Error', 'Failed to load nutrition card data');
+        router.back();
+      }
+    }
+  }, [nutritionCardData, isNutritionCard]);
 
   // Track when editedMediaUri changes (removed excessive logging)
   useEffect(() => {
@@ -139,14 +159,60 @@ export default function PreviewScreen() {
    * Send media to a specific conversation
    */
   const sendToConversation = async (conversation: ConversationWithDetails) => {
-    if (!currentMediaUri) {
-      Alert.alert("Error", "No media found to send.");
-      return;
-    }
-
     // Check if user is authenticated
     if (!user) {
       Alert.alert("Authentication Error", "Please sign in to send messages.");
+      return;
+    }
+
+    // Handle nutrition card sharing
+    if (isNutritionCard && nutritionCard) {
+      setSending(true);
+      try {
+        // Create a formatted nutrition summary message
+        const nutritionSummary = `🍎 **${nutritionCard.foodName}**
+
+📊 **Nutrition Facts:**
+• Calories: ${nutritionCard.nutritionFacts.calories}
+• Protein: ${nutritionCard.nutritionFacts.protein}g
+• Carbs: ${nutritionCard.nutritionFacts.carbs}g
+• Fat: ${nutritionCard.nutritionFacts.fat}g
+
+💡 **Health Insights:**
+${nutritionCard.healthInsights.map((insight, i) => `${i + 1}. ${insight}`).join('\n')}
+
+🍳 **Recipe Ideas:**
+${nutritionCard.recipeIdeas.map((recipe, i) => `${i + 1}. ${recipe}`).join('\n')}
+
+🤖 *AI-powered nutrition analysis*`;
+
+        // Send as text message (we could create a visual card in the future)
+        const result = await sendPhotoMessage({
+          conversation_id: conversation.id,
+          content: nutritionSummary,
+          imageUri: '', // No image for nutrition card sharing
+          mediaType: 'photo', // Use photo type but without actual image
+          options: { quality: 0.8 }
+        }).unwrap();
+
+        Alert.alert(
+          "Nutrition Card Sent!",
+          `Nutrition analysis sent to ${conversation.other_participant.display_name || 'your friend'}`,
+          [{ text: "OK", onPress: () => router.back() }]
+        );
+        setShowSendModal(false);
+      } catch (error) {
+        console.error('Failed to send nutrition card:', error);
+        Alert.alert("Send Failed", "Failed to send nutrition card. Please try again.", [{ text: "OK" }]);
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    // Regular media sending
+    if (!currentMediaUri) {
+      Alert.alert("Error", "No media found to send.");
       return;
     }
 
@@ -408,7 +474,7 @@ export default function PreviewScreen() {
     });
   };
 
-  if (!mediaUri) {
+  if (!mediaUri && !isNutritionCard) {
     return (
       <SafeAreaView className="flex-1 bg-background">
         <View className="flex-1 items-center justify-center px-4">
@@ -433,6 +499,20 @@ export default function PreviewScreen() {
     );
   }
 
+  if (isNutritionCard && !nutritionCard) {
+    return (
+      <SafeAreaView className="flex-1 bg-background">
+        <View className="flex-1 items-center justify-center px-4">
+          <View className="rounded-lg border border-border bg-card p-6 shadow-lg">
+            <Text className="text-center text-xl font-semibold text-foreground">
+              Loading Nutrition Card...
+            </Text>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView className="flex-1 bg-black">
       {/* Header with back button */}
@@ -445,7 +525,7 @@ export default function PreviewScreen() {
             <Ionicons name="arrow-back" size={24} color="white" />
           </TouchableOpacity>
           <Text className="text-lg font-bold text-white">
-            {isVideo ? 'Video Preview' : 'Photo Preview'}
+            {isNutritionCard ? 'Nutrition Card' : (isVideo ? 'Video Preview' : 'Photo Preview')}
           </Text>
           <View className="h-10 w-10" />
         </View>
@@ -453,7 +533,17 @@ export default function PreviewScreen() {
 
       {/* Media display */}
       <View className="flex-1 items-center justify-center">
-        {isVideo ? (
+        {isNutritionCard && nutritionCard ? (
+          <View className="flex-1 items-center justify-center w-full px-4">
+            <NutritionCard
+              nutritionCard={nutritionCard}
+              onFeedback={(type, section) => {
+                // Handle feedback if needed
+                console.log('Nutrition card feedback:', type, section);
+              }}
+            />
+          </View>
+        ) : isVideo ? (
           <VideoView
             player={videoPlayer}
             style={{ width: '100%', height: '100%' }}
@@ -515,29 +605,31 @@ export default function PreviewScreen() {
         )}
       </View>
 
-      {/* Edit and AI buttons (floating) */}
-      <View className="absolute top-20 right-4 space-y-3">
-        {/* AI Caption button */}
-        <TouchableOpacity
-          className="h-12 w-12 items-center justify-center rounded-full bg-purple-500"
-          onPress={handleGenerateAiCaptions}
-          disabled={isGeneratingCaptions}
-        >
-          {isGeneratingCaptions ? (
-            <ActivityIndicator size="small" color="white" />
-          ) : (
-            <Ionicons name="sparkles" size={20} color="white" />
-          )}
-        </TouchableOpacity>
-        
-        {/* Edit button */}
-        <TouchableOpacity
-          className="h-12 w-12 items-center justify-center rounded-full bg-blue-500"
-          onPress={handleOpenCreativeTools}
-        >
-          <Ionicons name="brush" size={20} color="white" />
-        </TouchableOpacity>
-      </View>
+      {/* Edit and AI buttons (floating) - hidden for nutrition cards */}
+      {!isNutritionCard && (
+        <View className="absolute top-20 right-4 space-y-3">
+          {/* AI Caption button */}
+          <TouchableOpacity
+            className="h-12 w-12 items-center justify-center rounded-full bg-purple-500"
+            onPress={handleGenerateAiCaptions}
+            disabled={isGeneratingCaptions}
+          >
+            {isGeneratingCaptions ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <Ionicons name="sparkles" size={20} color="white" />
+            )}
+          </TouchableOpacity>
+          
+          {/* Edit button */}
+          <TouchableOpacity
+            className="h-12 w-12 items-center justify-center rounded-full bg-blue-500"
+            onPress={handleOpenCreativeTools}
+          >
+            <Ionicons name="brush" size={20} color="white" />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Bottom action buttons */}
       <View className="absolute bottom-0 left-0 right-0 pb-8">
@@ -555,11 +647,13 @@ export default function PreviewScreen() {
             </View>
           </TouchableOpacity>
 
-          {/* Save to Journal button */}
+          {/* Save to Journal button - disabled for nutrition cards */}
           <TouchableOpacity
-            className="flex-1 items-center justify-center rounded-full bg-green-600 py-4"
-            onPress={handleSaveToJournal}
-            disabled={savingToJournal}
+            className={`flex-1 items-center justify-center rounded-full py-4 ${
+              isNutritionCard ? 'bg-gray-500' : 'bg-green-600'
+            }`}
+            onPress={isNutritionCard ? undefined : handleSaveToJournal}
+            disabled={savingToJournal || isNutritionCard}
           >
             <View className="items-center">
               {savingToJournal ? (
@@ -573,11 +667,13 @@ export default function PreviewScreen() {
             </View>
           </TouchableOpacity>
 
-          {/* Story button */}
+          {/* Story button - disabled for nutrition cards */}
           <TouchableOpacity
-            className="flex-1 items-center justify-center rounded-full bg-purple-600 py-4"
-            onPress={handlePostToStory}
-            disabled={postingToStory}
+            className={`flex-1 items-center justify-center rounded-full py-4 ${
+              isNutritionCard ? 'bg-gray-500' : 'bg-purple-600'
+            }`}
+            onPress={isNutritionCard ? undefined : handlePostToStory}
+            disabled={postingToStory || isNutritionCard}
           >
             <View className="items-center">
               {postingToStory ? (
@@ -626,33 +722,35 @@ export default function PreviewScreen() {
                 <Text className="text-primary">Cancel</Text>
               </TouchableOpacity>
               <Text className="text-lg font-semibold text-foreground">
-                Send {sendMode === 'snap' ? 'Snap' : (isVideo ? 'Video' : 'Photo')}
+                Send {isNutritionCard ? 'Nutrition Card' : (sendMode === 'snap' ? 'Snap' : (isVideo ? 'Video' : 'Photo'))}
               </Text>
               <View className="w-12" />
             </View>
 
-            {/* Send Mode Toggle */}
-            <View className="flex-row border-b border-border">
-              <TouchableOpacity
-                className={`flex-1 py-3 items-center ${sendMode === 'regular' ? 'border-b-2 border-primary' : ''}`}
-                onPress={() => setSendMode('regular')}
-              >
-                <Text className={`font-semibold ${sendMode === 'regular' ? 'text-primary' : 'text-muted-foreground'}`}>
-                  Regular
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className={`flex-1 py-3 items-center ${sendMode === 'snap' ? 'border-b-2 border-purple-500' : ''}`}
-                onPress={() => setSendMode('snap')}
-              >
-                <Text className={`font-semibold ${sendMode === 'snap' ? 'text-purple-500' : 'text-muted-foreground'}`}>
-                  Snap
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* Send Mode Toggle - hide for nutrition cards */}
+            {!isNutritionCard && (
+              <View className="flex-row border-b border-border">
+                <TouchableOpacity
+                  className={`flex-1 py-3 items-center ${sendMode === 'regular' ? 'border-b-2 border-primary' : ''}`}
+                  onPress={() => setSendMode('regular')}
+                >
+                  <Text className={`font-semibold ${sendMode === 'regular' ? 'text-primary' : 'text-muted-foreground'}`}>
+                    Regular
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className={`flex-1 py-3 items-center ${sendMode === 'snap' ? 'border-b-2 border-purple-500' : ''}`}
+                  onPress={() => setSendMode('snap')}
+                >
+                  <Text className={`font-semibold ${sendMode === 'snap' ? 'text-purple-500' : 'text-muted-foreground'}`}>
+                    Snap
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
-            {/* Snap Settings (only show when snap mode is selected) */}
-            {sendMode === 'snap' && (
+            {/* Snap Settings (only show when snap mode is selected and not nutrition card) */}
+            {sendMode === 'snap' && !isNutritionCard && (
               <View className="border-b border-border bg-purple-50 px-4 py-4">
                 <Text className="text-sm font-semibold text-purple-800 mb-3">Snap Settings</Text>
                 
@@ -728,7 +826,7 @@ export default function PreviewScreen() {
                     No Conversations
                   </Text>
                   <Text className="mt-2 text-center text-muted-foreground">
-                    Start a conversation from the Chat tab to send {isVideo ? 'videos' : 'photos'}
+                    Start a conversation from the Chat tab to send {isNutritionCard ? 'nutrition cards' : (isVideo ? 'videos' : 'photos')}
                   </Text>
                 </View>
               ) : (
