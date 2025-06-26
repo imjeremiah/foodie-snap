@@ -430,3 +430,70 @@ export const ACTIVITY_LEVELS = [
   { value: 'very_active', label: 'Very Active', emoji: '💪', description: 'Hard exercise 6-7 days/week' },
   { value: 'extremely_active', label: 'Extremely Active', emoji: '🔥', description: 'Very hard exercise or physical job' },
 ] as const;
+
+// RAG and AI-related types
+export interface ContentEmbedding {
+  id: string;
+  user_id: string;
+  journal_entry_id?: string;
+  content_type: 'caption' | 'image_metadata' | 'nutrition_data';
+  content_text: string;
+  embedding: number[]; // Vector embedding
+  metadata: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiFeedback {
+  id: string;
+  user_id: string;
+  suggestion_type: 'caption' | 'nutrition' | 'recipe' | 'prompt';
+  suggestion_id: string;
+  feedback_type: 'thumbs_up' | 'thumbs_down' | 'edited' | 'ignored';
+  original_suggestion: string;
+  edited_version?: string;
+  context_metadata: Record<string, any>;
+  created_at: string;
+}
+
+export interface CaptionGenerationRequest {
+  imageUri?: string;
+  imageDescription?: string;
+  contentType?: 'photo' | 'video';
+  context?: any;
+}
+
+export interface CaptionGenerationResponse {
+  success: boolean;
+  captions?: string[];
+  error?: string;
+  metadata?: {
+    processingTime: number;
+    similarContentCount: number;
+    contextUsed: boolean;
+  };
+}
+
+export interface EmbeddingGenerationRequest {
+  journalEntryId: string;
+  imageUri?: string;
+  caption?: string;
+  forceRegenerate?: boolean;
+}
+
+export interface EmbeddingGenerationResponse {
+  success: boolean;
+  embeddingsGenerated?: number;
+  error?: string;
+  processingTime?: number;
+}
+
+export interface SimilarContent {
+  id: string;
+  journal_entry_id: string;
+  content_text: string;
+  content_type: string;
+  metadata: Record<string, any>;
+  similarity: number;
+  created_at: string;
+}

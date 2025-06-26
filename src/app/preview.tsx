@@ -3,7 +3,7 @@
  * Shows the captured media and provides Send/Discard functionality for both photos and videos.
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { 
   View, 
   Text, 
@@ -18,16 +18,25 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { VideoView, useVideoPlayer } from "expo-video";
-import { useGetConversationsQuery, useSendPhotoMessageMutation, useSaveToJournalMutation, useSendSnapMessageEnhancedMutation, useCreateStoryMutation } from "../store/slices/api-slice";
+import { 
+  useGetConversationsQuery, 
+  useSendPhotoMessageMutation, 
+  useSaveToJournalMutation, 
+  useSendSnapMessageEnhancedMutation, 
+  useCreateStoryMutation,
+  useGenerateSmartCaptionsMutation,
+  useStoreAiFeedbackMutation,
+  useGenerateContentEmbeddingsMutation
+} from "../store/slices/api-slice";
 import type { ConversationWithDetails } from "../types/database";
 import CreativeToolsModal from "../components/creative/CreativeToolsModal";
-import { useSession } from "../hooks/use-session";
+import { useAuth } from "../contexts/AuthContext";
 
 type MediaType = 'photo' | 'video';
 
 export default function PreviewScreen() {
   const router = useRouter();
-  const { user } = useSession();
+  const { user } = useAuth();
   const { mediaUri, mediaType = 'photo' } = useLocalSearchParams<{ 
     mediaUri: string; 
     mediaType: string;
@@ -51,20 +60,34 @@ export default function PreviewScreen() {
   const [imageLoading, setImageLoading] = useState(false);
   const [imageLoadError, setImageLoadError] = useState(false);
 
-  // API hooks
-  const { data: conversations = [], isLoading: loadingConversations } = useGetConversationsQuery();
+  // AI Caption state
+  const [showAiCaptionModal, setShowAiCaptionModal] = useState(false);
+  const [generatedCaptions, setGeneratedCaptions] = useState<string[]>([]);
+  const [selectedCaption, setSelectedCaption] = useState<string>('');
+  const [isGeneratingCaptions, setIsGeneratingCaptions] = useState(false);
+
+  // API hooks - only fetch conversations when user is authenticated
+  const { data: conversations = [], isLoading: loadingConversations } = useGetConversationsQuery(undefined, {
+    skip: !user
+  });
   const [sendPhotoMessage] = useSendPhotoMessageMutation();
   const [saveToJournal] = useSaveToJournalMutation();
   const [sendSnapMessage] = useSendSnapMessageEnhancedMutation();
   const [createStory] = useCreateStoryMutation();
+  
+  // RAG AI hooks
+  const [generateSmartCaptions] = useGenerateSmartCaptionsMutation();
+  const [storeAiFeedback] = useStoreAiFeedbackMutation();
+  const [generateContentEmbeddings] = useGenerateContentEmbeddingsMutation();
 
   // Determine if this is a video
   const isVideo = mediaType === 'video';
 
-  // Log when editedMediaUri changes
+  // Track when editedMediaUri changes (removed excessive logging)
   useEffect(() => {
+    // Reset error state when media URI changes
     if (editedMediaUri) {
-      console.log('Preview: editedMediaUri changed to:', editedMediaUri);
+      setImageLoadError(false);
     }
   }, [editedMediaUri]);
 
@@ -116,8 +139,7 @@ export default function PreviewScreen() {
    * Send media to a specific conversation
    */
   const sendToConversation = async (conversation: ConversationWithDetails) => {
-    const currentUri = getCurrentMediaUri();
-    if (!currentUri) {
+    if (!currentMediaUri) {
       Alert.alert("Error", "No media found to send.");
       return;
     }
@@ -137,7 +159,8 @@ export default function PreviewScreen() {
         console.log('Sending snap with settings:', snapSettings);
         const result = await sendSnapMessage({
           conversation_id: conversation.id,
-          imageUri: currentUri,
+          content: selectedCaption || undefined,
+          imageUri: currentMediaUri,
           viewing_duration: snapSettings.viewingDuration,
           max_replays: snapSettings.maxReplays,
           expires_in_seconds: snapSettings.expiresIn,
@@ -155,7 +178,8 @@ export default function PreviewScreen() {
         console.log('Sending regular message');
         const result = await sendPhotoMessage({
           conversation_id: conversation.id,
-          imageUri: currentUri,
+          content: selectedCaption || undefined,
+          imageUri: currentMediaUri,
           mediaType: mediaType as 'photo' | 'video',
           options: { quality: 0.8 }
         }).unwrap();
@@ -199,13 +223,13 @@ export default function PreviewScreen() {
    * Handle saving to journal
    */
       const handleSaveToJournal = async () => {
-    const currentUri = getCurrentMediaUri();
-    if (!currentUri) return;
+    if (!currentMediaUri) return;
 
     setSavingToJournal(true);
     try {
-      await saveToJournal({
-        imageUri: currentUri,
+      const result = await saveToJournal({
+        imageUri: currentMediaUri,
+        caption: selectedCaption || undefined,
         content_type: mediaType as 'photo' | 'video',
         options: { quality: 0.8 }
       }).unwrap();
@@ -215,6 +239,18 @@ export default function PreviewScreen() {
         `Your ${isVideo ? 'video' : 'photo'} has been saved to your journal.`,
         [{ text: "OK" }]
       );
+
+      // Trigger asynchronous embedding generation for RAG
+      if (result && result.id) {
+        generateContentEmbeddings({
+          journalEntryId: result.id,
+          imageUri: currentMediaUri,
+          caption: selectedCaption || undefined
+        }).catch(error => {
+          console.error('Failed to generate embeddings:', error);
+          // Don't show user error - this is background processing
+        });
+      }
     } catch (error) {
       console.error(`Failed to save ${mediaType} to journal:`, error);
       Alert.alert(
@@ -231,13 +267,13 @@ export default function PreviewScreen() {
    * Handle posting to story
    */
   const handlePostToStory = async () => {
-    const currentUri = getCurrentMediaUri();
-    if (!currentUri) return;
+    if (!currentMediaUri) return;
 
     setPostingToStory(true);
     try {
       await createStory({
-        imageUri: currentUri,
+        imageUri: currentMediaUri,
+        caption: selectedCaption || undefined,
         content_type: mediaType as 'photo' | 'video',
         viewing_duration: 5, // Default 5 seconds
         options: { quality: 0.8 }
@@ -278,20 +314,98 @@ export default function PreviewScreen() {
    * Handle saving edited media from creative tools
    */
   const handleSaveEditedMedia = (newEditedUri: string) => {
-    console.log('Preview: Saving edited media URI:', newEditedUri);
     setEditedMediaUri(newEditedUri);
     setImageLoadError(false); // Reset error state
     setShowCreativeTools(false);
-    // Don't set imageLoading to true here - let the Image component handle it
+  };
+
+  // Memoize the current media URI to prevent unnecessary re-renders
+  const currentMediaUri = useMemo(() => {
+    return editedMediaUri || mediaUri;
+  }, [editedMediaUri, mediaUri]);
+
+  /**
+   * Generate AI captions for the current media
+   */
+  const handleGenerateAiCaptions = async () => {
+    if (!currentMediaUri) {
+      Alert.alert("Error", "No media found to analyze.");
+      return;
+    }
+
+    setIsGeneratingCaptions(true);
+    try {
+      const result = await generateSmartCaptions({
+        imageUri: currentMediaUri,
+        contentType: mediaType as 'photo' | 'video',
+        context: {
+          selectedCaption,
+          captionCount: generatedCaptions.length
+        }
+      }).unwrap();
+
+      if (result.success && result.captions) {
+        setGeneratedCaptions(result.captions);
+        setShowAiCaptionModal(true);
+      } else {
+        throw new Error(result.error || 'Failed to generate captions');
+      }
+    } catch (error) {
+      console.error('Caption generation failed:', error);
+      Alert.alert(
+        "Caption Generation Failed",
+        "Unable to generate AI captions at this time. Please try again later.",
+        [{ text: "OK" }]
+      );
+    } finally {
+      setIsGeneratingCaptions(false);
+    }
   };
 
   /**
-   * Get the current media URI (edited version if available)
+   * Handle caption selection
    */
-  const getCurrentMediaUri = () => {
-    const uri = editedMediaUri || mediaUri;
-    console.log('Preview: Current media URI:', uri, { editedMediaUri, mediaUri });
-    return uri;
+  const handleCaptionSelect = (caption: string, index: number) => {
+    setSelectedCaption(caption);
+    setShowAiCaptionModal(false);
+    
+    // Store positive feedback for selected caption
+    const suggestionId = `caption_${Date.now()}_${index}`;
+    storeAiFeedback({
+      suggestion_type: 'caption',
+      suggestion_id: suggestionId,
+      feedback_type: 'thumbs_up',
+      original_suggestion: caption,
+      context_metadata: {
+        media_type: mediaType,
+        selection_index: index,
+        total_options: generatedCaptions.length,
+        timestamp: new Date().toISOString()
+      }
+    }).catch(error => {
+      console.error('Failed to store caption feedback:', error);
+    });
+  };
+
+  /**
+   * Handle caption feedback (thumbs up/down)
+   */
+  const handleCaptionFeedback = (caption: string, index: number, feedbackType: 'thumbs_up' | 'thumbs_down') => {
+    const suggestionId = `caption_${Date.now()}_${index}`;
+    storeAiFeedback({
+      suggestion_type: 'caption',
+      suggestion_id: suggestionId,
+      feedback_type: feedbackType,
+      original_suggestion: caption,
+      context_metadata: {
+        media_type: mediaType,
+        feedback_index: index,
+        total_options: generatedCaptions.length,
+        timestamp: new Date().toISOString()
+      }
+    }).catch(error => {
+      console.error('Failed to store caption feedback:', error);
+    });
   };
 
   if (!mediaUri) {
@@ -351,12 +465,11 @@ export default function PreviewScreen() {
         ) : (
           <View className="flex-1 items-center justify-center w-full">
             <Image
-              key={getCurrentMediaUri()} // Force re-render when URI changes
-              source={{ uri: getCurrentMediaUri() }}
+              key={currentMediaUri} // Use memoized URI to prevent unnecessary re-renders
+              source={{ uri: currentMediaUri }}
               className="h-full w-full"
               resizeMode="contain"
               onLoad={() => {
-                console.log('Preview: Image loaded successfully');
                 setImageLoading(false);
                 setImageLoadError(false);
               }}
@@ -366,12 +479,10 @@ export default function PreviewScreen() {
                 setImageLoadError(true);
               }}
               onLoadStart={() => {
-                console.log('Preview: Image load started');
                 setImageLoading(true);
                 setImageLoadError(false);
               }}
               onLoadEnd={() => {
-                console.log('Preview: Image load ended');
                 // Only set loading to false if not already handled by onLoad
                 setTimeout(() => setImageLoading(false), 100);
               }}
@@ -404,13 +515,29 @@ export default function PreviewScreen() {
         )}
       </View>
 
-      {/* Edit button (floating) */}
-      <TouchableOpacity
-        className="absolute top-20 right-4 h-12 w-12 items-center justify-center rounded-full bg-blue-500"
-        onPress={handleOpenCreativeTools}
-      >
-        <Ionicons name="brush" size={20} color="white" />
-      </TouchableOpacity>
+      {/* Edit and AI buttons (floating) */}
+      <View className="absolute top-20 right-4 space-y-3">
+        {/* AI Caption button */}
+        <TouchableOpacity
+          className="h-12 w-12 items-center justify-center rounded-full bg-purple-500"
+          onPress={handleGenerateAiCaptions}
+          disabled={isGeneratingCaptions}
+        >
+          {isGeneratingCaptions ? (
+            <ActivityIndicator size="small" color="white" />
+          ) : (
+            <Ionicons name="sparkles" size={20} color="white" />
+          )}
+        </TouchableOpacity>
+        
+        {/* Edit button */}
+        <TouchableOpacity
+          className="h-12 w-12 items-center justify-center rounded-full bg-blue-500"
+          onPress={handleOpenCreativeTools}
+        >
+          <Ionicons name="brush" size={20} color="white" />
+        </TouchableOpacity>
+      </View>
 
       {/* Bottom action buttons */}
       <View className="absolute bottom-0 left-0 right-0 pb-8">
@@ -651,6 +778,95 @@ export default function PreviewScreen() {
                 </ScrollView>
               )}
             </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* AI Caption Modal */}
+      <Modal
+        visible={showAiCaptionModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAiCaptionModal(false)}
+      >
+        <SafeAreaView className="flex-1 bg-background">
+          <View className="flex-1">
+            {/* Modal Header */}
+            <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
+              <TouchableOpacity onPress={() => setShowAiCaptionModal(false)}>
+                <Text className="text-primary">Cancel</Text>
+              </TouchableOpacity>
+              <Text className="text-lg font-semibold text-foreground">AI Caption Suggestions</Text>
+              <View className="w-16" />
+            </View>
+
+            {/* Caption Options */}
+            <ScrollView className="flex-1 px-4 py-6">
+              <Text className="mb-4 text-center text-muted-foreground">
+                Choose a caption or tap thumbs up/down to help improve suggestions
+              </Text>
+              
+              {generatedCaptions.map((caption, index) => (
+                <View key={index} className="mb-4 rounded-lg border border-border bg-card p-4">
+                  <TouchableOpacity
+                    className="mb-3"
+                    onPress={() => handleCaptionSelect(caption, index)}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-base text-foreground leading-6">
+                      {caption}
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  {/* Feedback buttons */}
+                  <View className="flex-row items-center justify-between">
+                    <View className="flex-row space-x-3">
+                      <TouchableOpacity
+                        className="flex-row items-center space-x-1 rounded-full bg-green-100 px-3 py-1"
+                        onPress={() => handleCaptionFeedback(caption, index, 'thumbs_up')}
+                      >
+                        <Ionicons name="thumbs-up" size={16} color="#059669" />
+                        <Text className="text-sm text-green-700">Good</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity
+                        className="flex-row items-center space-x-1 rounded-full bg-red-100 px-3 py-1"
+                        onPress={() => handleCaptionFeedback(caption, index, 'thumbs_down')}
+                      >
+                        <Ionicons name="thumbs-down" size={16} color="#DC2626" />
+                        <Text className="text-sm text-red-700">Improve</Text>
+                      </TouchableOpacity>
+                    </View>
+                    
+                    <TouchableOpacity
+                      className="rounded-full bg-primary px-4 py-2"
+                      onPress={() => handleCaptionSelect(caption, index)}
+                    >
+                      <Text className="text-sm font-medium text-primary-foreground">
+                        Use This
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+              
+              {generatedCaptions.length === 0 && (
+                <View className="items-center py-8">
+                  <Ionicons name="chatbubble-outline" size={48} color="#9CA3AF" />
+                  <Text className="mt-2 text-center text-muted-foreground">
+                    No captions generated yet
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Selected caption preview */}
+            {selectedCaption.length > 0 && (
+              <View className="border-t border-border bg-muted/50 px-4 py-3">
+                <Text className="text-sm font-medium text-foreground mb-1">Selected Caption:</Text>
+                <Text className="text-sm text-muted-foreground">{selectedCaption}</Text>
+              </View>
+            )}
           </View>
         </SafeAreaView>
       </Modal>

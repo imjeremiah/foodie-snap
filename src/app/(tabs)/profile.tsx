@@ -7,7 +7,7 @@ import { View, Text, TouchableOpacity, Alert, ScrollView, Image } from "react-na
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useSession } from "../../hooks/use-session";
+import { useAuth } from "../../contexts/AuthContext";
 import { 
   useGetCurrentProfileQuery, 
   useGetFriendsQuery,
@@ -20,7 +20,7 @@ import {
 } from "../../store/slices/api-slice";
 
 export default function ProfileScreen() {
-  const { user, signOut, loading } = useSession();
+  const { user, signOut, loading } = useAuth();
   const { data: profile } = useGetCurrentProfileQuery();
   const { data: friends = [], isLoading: friendsLoading } = useGetFriendsQuery();
   const { data: userStats, isLoading: statsLoading } = useGetUserStatsQuery();

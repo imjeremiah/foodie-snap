@@ -25,8 +25,12 @@ export function useSession() {
   );
 
   useEffect(() => {
+    let isMounted = true;
+    
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!isMounted) return;
+      
       dispatch(setSession({ user: session?.user ?? null, session }));
       
       // Initialize real-time subscriptions if user is authenticated
@@ -39,6 +43,8 @@ export function useSession() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!isMounted) return;
+      
       console.log("Auth state changed:", event);
       
       if (event === "SIGNED_IN" && session?.user) {
@@ -49,6 +55,9 @@ export function useSession() {
         dispatch(clearSession());
         // Clean up real-time subscriptions on sign out
         cleanupRealTimeSubscriptions();
+      } else if (event === "INITIAL_SESSION") {
+        // Handle initial session without re-initializing subscriptions
+        dispatch(setSession({ user: session?.user ?? null, session }));
       } else {
         dispatch(setSession({ user: session?.user ?? null, session }));
       }
@@ -56,10 +65,11 @@ export function useSession() {
 
     // Cleanup subscriptions when component unmounts
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
       cleanupRealTimeSubscriptions();
     };
-  }, [dispatch]);
+  }, []); // Remove dispatch dependency to prevent multiple listeners
 
   /**
    * Sign in with email and password

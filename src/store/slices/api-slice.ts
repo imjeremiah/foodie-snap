@@ -33,7 +33,14 @@ import type {
   SpotlightReaction,
   SpotlightReport,
   Story,
-  StoryFeedItem
+  StoryFeedItem,
+  ContentEmbedding,
+  AiFeedback,
+  CaptionGenerationRequest,
+  CaptionGenerationResponse,
+  EmbeddingGenerationRequest,
+  EmbeddingGenerationResponse,
+  SimilarContent
 } from "../../types/database";
 
 /**
@@ -2562,6 +2569,238 @@ export const apiSlice = createApi({
       invalidatesTags: ["Story"],
     }),
 
+    // RAG & AI Caption Generation endpoints
+    generateSmartCaptions: builder.mutation<CaptionGenerationResponse, CaptionGenerationRequest>({
+      queryFn: async (request) => {
+        console.log('🔵 Starting smart caption generation...');
+        
+        // Get current user and fresh session
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+          console.error('❌ User authentication failed:', userError);
+          return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+        }
+
+        // Get fresh session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session?.access_token) {
+          console.error('❌ Session authentication failed:', sessionError);
+          return { error: { status: "CUSTOM_ERROR", error: "No authenticated session" } };
+        }
+
+        console.log('🔵 User and session authenticated, calling Edge Function...');
+
+        try {
+          const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/generate-smart-captions`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+              'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+            },
+            body: JSON.stringify(request),
+          });
+
+          console.log('🔵 Edge Function response status:', response.status);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Edge Function error response:', errorText);
+            
+            // Try to parse as JSON if possible for better error messages
+            try {
+              const errorJson = JSON.parse(errorText);
+              return { error: { status: "CUSTOM_ERROR", error: errorJson.error || errorText } };
+            } catch {
+              return { error: { status: "CUSTOM_ERROR", error: `Caption generation failed: ${errorText}` } };
+            }
+          }
+
+          const data = await response.json();
+          console.log('✅ Smart caption generation successful');
+          return { data };
+          
+        } catch (networkError) {
+          console.error('❌ Network error calling Edge Function:', networkError);
+          return { error: { status: "CUSTOM_ERROR", error: `Network error: ${networkError.message}` } };
+        }
+      },
+      // Don't invalidate any tags since this doesn't modify persistent data
+    }),
+
+    generateContentEmbeddings: builder.mutation<EmbeddingGenerationResponse, EmbeddingGenerationRequest>({
+      queryFn: async (request) => {
+        console.log('🔵 Starting content embedding generation...');
+        
+        // Get current user and fresh session
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+          console.error('❌ User authentication failed:', userError);
+          return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+        }
+
+        // Get fresh session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session?.access_token) {
+          console.error('❌ Session authentication failed:', sessionError);
+          return { error: { status: "CUSTOM_ERROR", error: "No authenticated session" } };
+        }
+
+        try {
+          const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/generate-content-embeddings`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+              'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+            },
+            body: JSON.stringify(request),
+          });
+
+          console.log('🔵 Embedding function response status:', response.status);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Embedding function error:', errorText);
+            return { error: { status: "CUSTOM_ERROR", error: `Embedding generation failed: ${errorText}` } };
+          }
+
+          const data = await response.json();
+          console.log('✅ Content embedding generation successful');
+          return { data };
+          
+        } catch (networkError) {
+          console.error('❌ Network error calling embedding function:', networkError);
+          return { error: { status: "CUSTOM_ERROR", error: `Network error: ${networkError.message}` } };
+        }
+      },
+      // Don't invalidate tags since embeddings are background processing
+    }),
+
+    storeAiFeedback: builder.mutation<string, {
+      suggestion_type: 'caption' | 'nutrition' | 'recipe' | 'prompt';
+      suggestion_id: string;
+      feedback_type: 'thumbs_up' | 'thumbs_down' | 'edited' | 'ignored';
+      original_suggestion: string;
+      edited_version?: string;
+      context_metadata?: Record<string, any>;
+    }>({
+      queryFn: async (feedbackData) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .rpc('store_ai_feedback', {
+            suggestion_type_param: feedbackData.suggestion_type,
+            suggestion_id_param: feedbackData.suggestion_id,
+            feedback_type_param: feedbackData.feedback_type,
+            original_suggestion_param: feedbackData.original_suggestion,
+            edited_version_param: feedbackData.edited_version || null,
+            context_metadata_param: feedbackData.context_metadata || {}
+          });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || "Feedback stored successfully" };
+      },
+      // Don't invalidate tags since feedback is background data
+    }),
+
+    searchSimilarContent: builder.query<SimilarContent[], {
+      content_text: string;
+      content_types?: string[];
+      similarity_threshold?: number;
+      max_results?: number;
+    }>({
+      queryFn: async ({ content_text, content_types = ['caption', 'image_metadata'], similarity_threshold = 0.7, max_results = 10 }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        // Use simple text search for now - semantic search would require Edge Function
+        // This provides basic functionality while maintaining security
+        let query = supabase
+          .from('content_embeddings')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(max_results);
+
+        if (content_types && content_types.length > 0) {
+          query = query.in('content_type', content_types);
+        }
+
+        // Use text search on content_text column
+        if (content_text.trim()) {
+          query = query.ilike('content_text', `%${content_text}%`);
+        }
+
+        const { data, error } = await query;
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        
+        // Transform to match SimilarContent interface
+        const transformedData = (data || []).map((item, index) => ({
+          ...item,
+          similarity: Math.max(0.5, 1 - (index * 0.1)) // Decreasing similarity score
+        }));
+
+        return { data: transformedData };
+      },
+      providesTags: ["Journal"], // Related to journal content
+    }),
+
+    getUserContentEmbeddings: builder.query<ContentEmbedding[], {
+      content_types?: string[];
+      limit?: number;
+    }>({
+      queryFn: async ({ content_types, limit = 50 }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        let query = supabase
+          .from('content_embeddings')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        if (content_types && content_types.length > 0) {
+          query = query.in('content_type', content_types);
+        }
+
+        const { data, error } = await query;
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || [] };
+      },
+      providesTags: ["Journal"], // Related to journal content
+    }),
+
+    getUserAiFeedback: builder.query<AiFeedback[], {
+      suggestion_types?: string[];
+      limit?: number;
+    }>({
+      queryFn: async ({ suggestion_types, limit = 100 }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        let query = supabase
+          .from('ai_feedback')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        if (suggestion_types && suggestion_types.length > 0) {
+          query = query.in('suggestion_type', suggestion_types);
+        }
+
+        const { data, error } = await query;
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || [] };
+      },
+      // No specific tag needed for feedback data
+    }),
 
   }),
 });
@@ -2653,4 +2892,11 @@ export const {
   useCreateGroupConversationMutation,
   useAddParticipantToConversationMutation,
   useRemoveParticipantFromConversationMutation,
+  // RAG & AI hooks
+  useGenerateSmartCaptionsMutation,
+  useGenerateContentEmbeddingsMutation,
+  useStoreAiFeedbackMutation,
+  useSearchSimilarContentQuery,
+  useGetUserContentEmbeddingsQuery,
+  useGetUserAiFeedbackQuery,
 } = apiSlice; 

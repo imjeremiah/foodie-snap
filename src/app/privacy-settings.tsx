@@ -21,7 +21,7 @@ import {
   useUpdateUserPreferencesMutation,
   useGetBlockedUsersQuery,
 } from "../store/slices/api-slice";
-import { useSession } from "../hooks/use-session";
+import { useAuth } from "../contexts/AuthContext";
 
 interface SettingItem {
   key: string;
@@ -43,7 +43,7 @@ interface SettingSection {
  * Privacy & Settings Screen Component
  */
 export default function PrivacySettingsScreen() {
-  const { user } = useSession();
+  const { user } = useAuth();
   const { data: preferences, isLoading: preferencesLoading } = useGetUserPreferencesQuery();
   const { data: blockedUsers = [] } = useGetBlockedUsersQuery();
   const [updatePreferences, { isLoading: updating }] = useUpdateUserPreferencesMutation();

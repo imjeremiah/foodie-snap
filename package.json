@@ -7,7 +7,13 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "db:push": "supabase db push",
+    "db:migrate": "supabase migration up",
+    "functions:deploy": "supabase functions deploy generate-smart-captions && supabase functions deploy generate-content-embeddings",
+    "functions:logs": "supabase functions logs",
+    "setup:rag": "npm run db:push && npm run functions:deploy",
+    "secrets:list": "supabase secrets list"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.8.2",
@@ -28,6 +34,7 @@
     "expo-status-bar": "~2.2.3",
     "expo-video": "~2.2.2",
     "nativewind": "^4.1.23",
+    "node-fetch": "^2.7.0",
     "react": "19.0.0",
     "react-native": "0.79.4",
     "react-native-css-interop": "^0.1.22",

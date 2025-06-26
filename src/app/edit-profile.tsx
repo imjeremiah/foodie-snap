@@ -25,13 +25,13 @@ import {
   useUpdateProfileMutation,
 } from "../store/slices/api-slice";
 import { uploadPhoto } from "../lib/storage";
-import { useSession } from "../hooks/use-session";
+import { useAuth } from "../contexts/AuthContext";
 
 /**
  * Edit Profile Screen Component
  */
 export default function EditProfileScreen() {
-  const { user } = useSession();
+  const { user } = useAuth();
   const { data: profile, isLoading: profileLoading } = useGetCurrentProfileQuery();
   const [updateProfile, { isLoading: updating }] = useUpdateProfileMutation();
 

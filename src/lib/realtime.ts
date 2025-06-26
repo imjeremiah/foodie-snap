@@ -9,9 +9,11 @@ import { apiSlice } from "../store/slices/api-slice";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 /**
- * Active subscription channels
+ * Active subscription channels with improved management
  */
 const activeChannels: Map<string, RealtimeChannel> = new Map();
+let isInitializing = false;
+let isCleaningUp = false;
 
 /**
  * Subscribe to real-time messages for a specific conversation
@@ -209,23 +211,61 @@ export function subscribeToConversations() {
  * Initialize all real-time subscriptions for the current user
  */
 export function initializeRealTimeSubscriptions() {
-  console.log("Initializing real-time subscriptions");
-  subscribeToFriendRequests();
-  subscribeToConversations();
+  // Prevent multiple simultaneous initializations
+  if (isInitializing || isCleaningUp) {
+    console.log("📡 Subscription initialization already in progress or cleaning up, skipping");
+    return;
+  }
+  
+  isInitializing = true;
+  console.log("📡 Initializing real-time subscriptions");
+  
+  try {
+    subscribeToFriendRequests();
+    subscribeToConversations();
+    console.log("✅ Real-time subscriptions initialized successfully");
+  } catch (error) {
+    console.error("❌ Failed to initialize real-time subscriptions:", error);
+  } finally {
+    isInitializing = false;
+  }
 }
 
 /**
  * Clean up all active subscriptions
  */
 export function cleanupRealTimeSubscriptions() {
-  console.log("Cleaning up real-time subscriptions");
+  // Prevent multiple simultaneous cleanups
+  if (isCleaningUp) {
+    console.log("🧹 Subscription cleanup already in progress, skipping");
+    return;
+  }
   
-  activeChannels.forEach((channel, channelName) => {
-    console.log(`Removing channel: ${channelName}`);
-    supabase.removeChannel(channel);
-  });
+  isCleaningUp = true;
+  console.log("🧹 Cleaning up real-time subscriptions");
   
-  activeChannels.clear();
+  try {
+    if (activeChannels.size === 0) {
+      console.log("📭 No active subscriptions to clean up");
+      return;
+    }
+    
+    activeChannels.forEach((channel, channelName) => {
+      console.log(`🗑️ Removing channel: ${channelName}`);
+      try {
+        supabase.removeChannel(channel);
+      } catch (error) {
+        console.error(`❌ Failed to remove channel ${channelName}:`, error);
+      }
+    });
+    
+    activeChannels.clear();
+    console.log("✅ Real-time subscriptions cleaned up successfully");
+  } catch (error) {
+    console.error("❌ Failed to cleanup real-time subscriptions:", error);
+  } finally {
+    isCleaningUp = false;
+  }
 }
 
 /**

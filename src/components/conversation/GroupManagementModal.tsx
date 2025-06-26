@@ -21,7 +21,7 @@ import {
   useGetFriendsQuery,
   useLeaveConversationMutation,
 } from "../../store/slices/api-slice";
-import { useSession } from "../../hooks/use-session";
+import { useAuth } from "../../contexts/AuthContext";
 import type { Profile } from "../../types/database";
 
 interface GroupManagementModalProps {
@@ -37,7 +37,7 @@ export default function GroupManagementModal({
   conversationId,
   groupName,
 }: GroupManagementModalProps) {
-  const { user } = useSession();
+  const { user } = useAuth();
   const [showAddMembers, setShowAddMembers] = useState(false);
   
   const { data: participants = [], refetch: refetchParticipants } = useGetConversationParticipantsQuery(conversationId);

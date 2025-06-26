@@ -29,7 +29,7 @@ import {
   useCleanupExpiredMessagesMutation,
   useGetConversationParticipantsQuery,
 } from "../../store/slices/api-slice";
-import { useSession } from "../../hooks/use-session";
+import { useAuth } from "../../contexts/AuthContext";
 import { 
   subscribeToMessages, 
   unsubscribeFromMessages,
@@ -41,7 +41,7 @@ import GroupManagementModal from "../../components/conversation/GroupManagementM
 
 export default function ChatThreadScreen() {
   const router = useRouter();
-  const { user } = useSession();
+  const { user } = useAuth();
   const { id, participantName, isGroup } = useLocalSearchParams<{
     id: string;
     participantName: string;

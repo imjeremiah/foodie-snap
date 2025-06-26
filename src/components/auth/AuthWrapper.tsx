@@ -6,7 +6,7 @@
 import React, { useState } from "react";
 import { View, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useSession } from "../../hooks/use-session";
+import { useAuth } from "../../contexts/AuthContext";
 import { useGetCurrentProfileQuery } from "../../store/slices/api-slice";
 import SignInScreen from "./SignInScreen";
 import SignUpScreen from "./SignUpScreen";
@@ -22,7 +22,7 @@ interface AuthWrapperProps {
  */
 export default function AuthWrapper({ children }: AuthWrapperProps) {
   const [isSignUp, setIsSignUp] = useState(false);
-  const { user, loading, initialized } = useSession();
+  const { user, loading, initialized } = useAuth();
 
   /**
    * Show loading screen while initializing auth state

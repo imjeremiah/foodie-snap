@@ -14,7 +14,7 @@ import {
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useSession } from "../../hooks/use-session";
+import { useAuth } from "../../contexts/AuthContext";
 
 interface SignInScreenProps {
   onSwitchToSignUp: () => void;
@@ -27,7 +27,7 @@ interface SignInScreenProps {
 export default function SignInScreen({ onSwitchToSignUp }: SignInScreenProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const { signIn, loading } = useSession();
+  const { signIn, loading } = useAuth();
 
   /**
    * Handle sign in form submission
