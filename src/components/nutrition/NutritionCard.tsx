@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { NutritionCard as NutritionCardType } from "../../types/database";
+import AIFeedbackButtons from "../ui/AIFeedbackButtons";
 
 interface NutritionCardProps {
   nutritionCard: NutritionCardType;
@@ -80,33 +81,37 @@ function ConfidenceIndicator({ confidence }: ConfidenceIndicatorProps) {
 }
 
 /**
- * Feedback button component
+ * Enhanced feedback component using AIFeedbackButtons
  */
 interface FeedbackButtonsProps {
   onFeedback?: (type: 'thumbs_up' | 'thumbs_down') => void;
+  suggestionType: 'nutrition' | 'recipe';
+  originalSuggestion: string;
+  section: string;
 }
 
-function FeedbackButtons({ onFeedback }: FeedbackButtonsProps) {
+function FeedbackButtons({ onFeedback, suggestionType, originalSuggestion, section }: FeedbackButtonsProps) {
   if (!onFeedback) return null;
 
   return (
-    <View className="flex-row items-center">
-      <TouchableOpacity
-        onPress={() => onFeedback('thumbs_up')}
-        className="flex-row items-center px-3 py-1 rounded-full bg-green-100 mr-4"
-      >
-        <Ionicons name="thumbs-up" size={16} color="#22C55E" />
-        <Text className="text-green-600 text-xs font-medium ml-1">Helpful</Text>
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        onPress={() => onFeedback('thumbs_down')}
-        className="flex-row items-center px-3 py-1 rounded-full bg-red-100"
-      >
-        <Ionicons name="thumbs-down" size={16} color="#EF4444" />
-        <Text className="text-red-600 text-xs font-medium ml-1">Not Helpful</Text>
-      </TouchableOpacity>
-    </View>
+    <AIFeedbackButtons
+      metadata={{
+        suggestion_type: suggestionType,
+        suggestion_id: `${suggestionType}_${Date.now()}_${section}`,
+        original_suggestion: originalSuggestion,
+        context_metadata: {
+          section,
+          suggestion_source: 'nutrition_analysis',
+          timestamp: new Date().toISOString()
+        }
+      }}
+      onFeedbackSubmitted={(feedbackType) => {
+        onFeedback(feedbackType as 'thumbs_up' | 'thumbs_down');
+      }}
+      showExplainer={true}
+      style="prominent"
+      size="small"
+    />
   );
 }
 
@@ -226,6 +231,9 @@ export default function NutritionCard({
               </View>
               <FeedbackButtons 
                 onFeedback={onFeedback ? (type) => onFeedback(type, 'health_insights') : undefined}
+                suggestionType="nutrition"
+                originalSuggestion={healthInsights.join('; ')}
+                section="health_insights"
               />
             </View>
             
@@ -257,6 +265,9 @@ export default function NutritionCard({
               </View>
               <FeedbackButtons 
                 onFeedback={onFeedback ? (type) => onFeedback(type, 'recipe_ideas') : undefined}
+                suggestionType="recipe"
+                originalSuggestion={recipeIdeas.join('; ')}
+                section="recipe_ideas"
               />
             </View>
             

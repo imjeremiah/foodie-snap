@@ -75,27 +75,44 @@ serve(async (req) => {
 
     console.log('🔵 Processing caption request for user:', user.id, 'contentType:', contentType)
 
-    // Step 1: Get user context for personalization
-    console.log('🔵 Fetching user context for RAG...')
+    // Step 1: Get enhanced user context for personalization (with feedback integration)
+    console.log('🔵 Fetching enhanced user context for RAG...')
     let userContext: any = null
     let preferences: any = {}
     let recentContent: any[] = []
+    let feedbackPreferences: any = {}
+    let analyticsData: any = {}
     
     try {
       const { data: contextData, error: contextError } = await supabaseClient
-        .rpc('get_user_rag_context', { user_id_param: user.id })
+        .rpc('get_user_rag_context_enhanced', { user_id_param: user.id })
 
       if (contextError) {
-        console.error('⚠️ Error getting user context (continuing without):', contextError)
-        // Continue without context rather than failing
+        console.error('⚠️ Error getting enhanced user context (continuing without):', contextError)
+        // Fallback to basic context
+        const { data: basicContextData, error: basicContextError } = await supabaseClient
+          .rpc('get_user_rag_context', { user_id_param: user.id })
+        
+        if (!basicContextError) {
+          userContext = basicContextData
+          preferences = userContext?.preferences || {}
+          recentContent = userContext?.recent_content || []
+        }
       } else {
         userContext = contextData
         preferences = userContext?.preferences || {}
         recentContent = userContext?.recent_content || []
-        console.log('✅ User context loaded successfully')
+        feedbackPreferences = userContext?.feedback_preferences || {}
+        analyticsData = userContext?.analytics_summary || {}
+        console.log('✅ Enhanced user context loaded successfully')
+        console.log('🔵 Feedback integration status:', {
+          has_liked_suggestions: feedbackPreferences?.liked_suggestions?.length > 0,
+          has_editing_patterns: Object.keys(feedbackPreferences?.editing_patterns || {}).length > 0,
+          recent_positive_rate: analyticsData?.recent_positive_rate || 0
+        })
       }
     } catch (contextException) {
-      console.error('⚠️ Exception getting user context (continuing without):', contextException)
+      console.error('⚠️ Exception getting enhanced user context (continuing without):', contextException)
       // Continue without context rather than failing
     }
 
@@ -210,7 +227,7 @@ serve(async (req) => {
       }
     }
 
-    // Step 4: Build the prompt for caption generation
+    // Step 4: Build the prompt for caption generation with feedback integration
     const buildPersonalizedPrompt = () => {
       let prompt = `You are an AI assistant helping a health-conscious food enthusiast create engaging social media captions for their meal photos.
 
@@ -225,6 +242,35 @@ CURRENT CONTENT:
 ${imageAnalysis}
 
 `
+
+      // Add feedback-based learning (NEW)
+      if (feedbackPreferences?.liked_suggestions?.length > 0) {
+        const likedExamples = feedbackPreferences.liked_suggestions.slice(0, 3)
+        prompt += `SUCCESSFUL SUGGESTIONS (user liked these):
+${likedExamples.map((suggestion: string) => `- "${suggestion}"`).join('\n')}
+
+`
+      }
+
+      if (feedbackPreferences?.disliked_suggestions?.length > 0) {
+        const dislikedExamples = feedbackPreferences.disliked_suggestions.slice(0, 2)
+        prompt += `AVOID THESE PATTERNS (user disliked these):
+${dislikedExamples.map((suggestion: string) => `- "${suggestion}"`).join('\n')}
+
+`
+      }
+
+      // Add editing patterns (NEW)
+      if (feedbackPreferences?.editing_patterns && Object.keys(feedbackPreferences.editing_patterns).length > 0) {
+        prompt += `USER EDITING PATTERNS:
+`
+        Object.entries(feedbackPreferences.editing_patterns).forEach(([type, data]: [string, any]) => {
+          if (data.common_edits && data.common_edits.length > 0) {
+            prompt += `- ${type} suggestions often edited to: "${data.common_edits[0]}"\n`
+          }
+        })
+        prompt += '\n'
+      }
 
       // Add context from similar content
       if (similarContent.length > 0) {
@@ -249,6 +295,18 @@ ${recentCaptions.map((caption: string) => `- "${caption}"`).join('\n')}
         }
       }
 
+      // Add performance feedback context (NEW)
+      if (analyticsData?.recent_positive_rate > 0) {
+        prompt += `PERFORMANCE NOTE: Your recent AI suggestions have a ${analyticsData.recent_positive_rate}% positive feedback rate. `
+        if (analyticsData.recent_positive_rate >= 70) {
+          prompt += `Keep using the current successful style patterns.\n\n`
+        } else if (analyticsData.recent_positive_rate >= 50) {
+          prompt += `Focus on what the user has liked before and avoid patterns they disliked.\n\n`
+        } else {
+          prompt += `Pay extra attention to the user's liked examples and editing patterns to improve.\n\n`
+        }
+      }
+
       prompt += `TASK:
 Generate exactly 3 distinct caption options that:
 1. Match the user's preferred ${preferences.content_style || 'casual'} tone
@@ -256,6 +314,8 @@ Generate exactly 3 distinct caption options that:
 3. Consider their dietary preferences: ${preferences.dietary_restrictions?.join(', ') || 'none'}
 4. Are suitable for social media (engaging, not too long)
 5. Include relevant hashtags if appropriate
+6. ${feedbackPreferences?.liked_suggestions?.length > 0 ? 'Follow patterns from successful suggestions above' : 'Create engaging, personalized content'}
+7. ${feedbackPreferences?.disliked_suggestions?.length > 0 ? 'Avoid patterns similar to disliked suggestions' : 'Focus on authenticity and value'}
 
 Each caption should be different in approach:
 - Option 1: Focus on the nutritional/health benefits

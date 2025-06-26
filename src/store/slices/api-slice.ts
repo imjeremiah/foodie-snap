@@ -2900,6 +2900,41 @@ export const apiSlice = createApi({
       // No specific tag needed for feedback data
     }),
 
+    getAiFeedbackAnalytics: builder.query<any, {
+      time_range_days?: number;
+    }>({
+      queryFn: async ({ time_range_days = 30 }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .rpc('get_ai_feedback_analytics', {
+            user_id_param: user.id,
+            time_range_days: time_range_days
+          });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || {} };
+      },
+      // No specific tag needed for analytics data
+    }),
+
+    getUserContentPreferencesFromFeedback: builder.query<any, void>({
+      queryFn: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .rpc('get_user_content_preferences_from_feedback', {
+            user_id_param: user.id
+          });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || {} };
+      },
+      // No specific tag needed for preferences data
+    }),
+
   }),
 });
 
@@ -2998,4 +3033,6 @@ export const {
   useSearchSimilarContentQuery,
   useGetUserContentEmbeddingsQuery,
   useGetUserAiFeedbackQuery,
+  useGetAiFeedbackAnalyticsQuery,
+  useGetUserContentPreferencesFromFeedbackQuery,
 } = apiSlice; 

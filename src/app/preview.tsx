@@ -31,6 +31,7 @@ import {
 import type { ConversationWithDetails, NutritionCard as NutritionCardType } from "../types/database";
 import CreativeToolsModal from "../components/creative/CreativeToolsModal";
 import NutritionCard from "../components/nutrition/NutritionCard";
+import AIFeedbackButtons, { type FeedbackMetadata } from "../components/ui/AIFeedbackButtons";
 import { useAuth } from "../contexts/AuthContext";
 
 type MediaType = 'photo' | 'video';
@@ -918,23 +919,25 @@ ${nutritionCard.recipeIdeas.map((recipe, i) => `${i + 1}. ${recipe}`).join('\n')
                   
                   {/* Feedback buttons */}
                   <View className="flex-row items-center justify-between">
-                    <View className="flex-row space-x-3">
-                      <TouchableOpacity
-                        className="flex-row items-center space-x-1 rounded-full bg-green-100 px-3 py-1"
-                        onPress={() => handleCaptionFeedback(caption, index, 'thumbs_up')}
-                      >
-                        <Ionicons name="thumbs-up" size={16} color="#059669" />
-                        <Text className="text-sm text-green-700">Good</Text>
-                      </TouchableOpacity>
-                      
-                      <TouchableOpacity
-                        className="flex-row items-center space-x-1 rounded-full bg-red-100 px-3 py-1"
-                        onPress={() => handleCaptionFeedback(caption, index, 'thumbs_down')}
-                      >
-                        <Ionicons name="thumbs-down" size={16} color="#DC2626" />
-                        <Text className="text-sm text-red-700">Improve</Text>
-                      </TouchableOpacity>
-                    </View>
+                    <AIFeedbackButtons
+                      metadata={{
+                        suggestion_type: 'caption',
+                        suggestion_id: `caption_${Date.now()}_${index}`,
+                        original_suggestion: caption,
+                        context_metadata: {
+                          media_type: mediaType,
+                          feedback_index: index,
+                          total_options: generatedCaptions.length,
+                          timestamp: new Date().toISOString()
+                        }
+                      }}
+                      onFeedbackSubmitted={(feedbackType) => {
+                        console.log(`Caption feedback: ${feedbackType} for option ${index + 1}`);
+                      }}
+                      showExplainer={true}
+                      style="prominent"
+                      size="small"
+                    />
                     
                     <TouchableOpacity
                       className="rounded-full bg-primary px-4 py-2"

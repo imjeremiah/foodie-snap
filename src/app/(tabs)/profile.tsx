@@ -405,6 +405,18 @@ export default function ProfileScreen() {
         <View className="mb-8 space-y-3">
           <TouchableOpacity 
             className="flex-row items-center rounded-lg border border-border bg-card p-4"
+            onPress={() => router.push("/ai-analytics")}
+          >
+            <Ionicons name="analytics-outline" size={20} color="#6366F1" />
+            <View className="ml-3 flex-1">
+              <Text className="font-medium text-foreground">AI Analytics</Text>
+              <Text className="text-sm text-muted-foreground">Track AI suggestion performance</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="gray" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            className="flex-row items-center rounded-lg border border-border bg-card p-4"
             onPress={() => router.push("/edit-profile")}
           >
             <Ionicons name="pencil-outline" size={20} color="gray" />
