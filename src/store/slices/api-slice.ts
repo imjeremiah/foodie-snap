@@ -42,7 +42,11 @@ import type {
   EmbeddingGenerationResponse,
   SimilarContent,
   NutritionScanRequest,
-  NutritionScanResponse
+  NutritionScanResponse,
+  ContentSpark,
+  PromptData,
+  ContentSparkGenerationRequest,
+  ContentSparkGenerationResponse
 } from "../../types/database";
 
 /**
@@ -67,7 +71,7 @@ const supabaseBaseQuery = fetchBaseQuery({
 export const apiSlice = createApi({
   reducerPath: "api",
   baseQuery: supabaseBaseQuery,
-  tagTypes: ["Profile", "Friend", "Conversation", "Message", "Journal", "Spotlight", "Story"],
+  tagTypes: ["Profile", "Friend", "Conversation", "Message", "Journal", "Spotlight", "Story", "ContentSpark"],
   endpoints: (builder) => ({
     // Profile endpoints
     getCurrentProfile: builder.query<Profile, void>({
@@ -3088,6 +3092,112 @@ export const apiSlice = createApi({
       // No specific tag needed for preferences data
     }),
 
+    // Content Sparks endpoints (User Story #2)
+    getCurrentContentSpark: builder.query<ContentSpark | null, void>({
+      queryFn: async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .rpc('get_current_content_spark', { user_id_param: user.id });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        
+        // Return first result if found, otherwise null
+        const contentSpark = data && data.length > 0 ? data[0] : null;
+        return { data: contentSpark };
+      },
+      providesTags: [{ type: "ContentSpark", id: "CURRENT" }],
+    }),
+
+    generateWeeklyContentSparks: builder.mutation<ContentSparkGenerationResponse, ContentSparkGenerationRequest>({
+      queryFn: async (request) => {
+        console.log('🔵 Starting content spark generation...');
+        
+        // Get current user and fresh session
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+          console.error('❌ User authentication failed:', userError);
+          return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+        }
+
+        // Get fresh session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session?.access_token) {
+          console.error('❌ Session authentication failed:', sessionError);
+          return { error: { status: "CUSTOM_ERROR", error: "No authenticated session" } };
+        }
+
+        console.log('🔵 Calling content spark generation function...');
+
+        try {
+          const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/generate-weekly-content-sparks`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+              'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+            },
+            body: JSON.stringify(request),
+          });
+
+          console.log('🔵 Content spark function response status:', response.status);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Content spark function error response:', errorText);
+            
+            try {
+              const errorJson = JSON.parse(errorText);
+              return { error: { status: "CUSTOM_ERROR", error: errorJson.error || errorText } };
+            } catch {
+              return { error: { status: "CUSTOM_ERROR", error: `Content spark generation failed: ${errorText}` } };
+            }
+          }
+
+          const data = await response.json();
+          console.log('✅ Content spark generation successful');
+          return { data };
+          
+        } catch (networkError) {
+          console.error('❌ Network error calling content spark function:', networkError);
+          return { error: { status: "CUSTOM_ERROR", error: `Network error: ${networkError.message}` } };
+        }
+      },
+      invalidatesTags: [{ type: "ContentSpark", id: "CURRENT" }],
+    }),
+
+    markContentSparkViewed: builder.mutation<boolean, string>({
+      queryFn: async (contentSparkId) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .rpc('mark_content_spark_viewed', { content_spark_id: contentSparkId });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || false };
+      },
+      invalidatesTags: [{ type: "ContentSpark", id: "CURRENT" }],
+    }),
+
+    recordPromptUsage: builder.mutation<boolean, { contentSparkId: string; promptIndex: number }>({
+      queryFn: async ({ contentSparkId, promptIndex }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+
+        const { data, error } = await supabase
+          .rpc('record_prompt_usage', { 
+            content_spark_id: contentSparkId,
+            prompt_index: promptIndex 
+          });
+
+        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        return { data: data || false };
+      },
+      invalidatesTags: [{ type: "ContentSpark", id: "CURRENT" }],
+    }),
+
   }),
 });
 
@@ -3194,4 +3304,9 @@ export const {
   useGetUserAiFeedbackQuery,
   useGetAiFeedbackAnalyticsQuery,
   useGetUserContentPreferencesFromFeedbackQuery,
+  // Content Sparks hooks
+  useGetCurrentContentSparkQuery,
+  useGenerateWeeklyContentSparksMutation,
+  useMarkContentSparkViewedMutation,
+  useRecordPromptUsageMutation,
 } = apiSlice; 

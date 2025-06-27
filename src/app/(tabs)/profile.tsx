@@ -16,7 +16,8 @@ import {
   useRejectFriendRequestMutation,
   useRemoveFriendMutation,
   useBlockUserMutation,
-  useResetOnboardingMutation
+  useResetOnboardingMutation,
+  useGetCurrentContentSparkQuery
 } from "../../store/slices/api-slice";
 
 export default function ProfileScreen() {
@@ -24,6 +25,7 @@ export default function ProfileScreen() {
   const { data: profile } = useGetCurrentProfileQuery();
   const { data: friends = [], isLoading: friendsLoading } = useGetFriendsQuery();
   const { data: userStats, isLoading: statsLoading } = useGetUserStatsQuery();
+  const { data: contentSpark } = useGetCurrentContentSparkQuery();
   const [acceptFriendRequest] = useAcceptFriendRequestMutation();
   const [rejectFriendRequest] = useRejectFriendRequestMutation();
   const [removeFriend] = useRemoveFriendMutation();
@@ -403,6 +405,30 @@ export default function ProfileScreen() {
 
         {/* Account Actions */}
         <View className="mb-8 space-y-3">
+          <TouchableOpacity 
+            className="flex-row items-center rounded-lg border border-border bg-card p-4"
+            onPress={() => router.push("/content-spark")}
+          >
+            <View className="relative">
+              <Text className="text-xl mr-3">🔥</Text>
+              {contentSpark?.is_new && (
+                <View className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-red-500" />
+              )}
+            </View>
+            <View className="ml-3 flex-1">
+              <View className="flex-row items-center">
+                <Text className="font-medium text-foreground">Content Spark</Text>
+                {contentSpark?.is_new && (
+                  <View className="ml-2 px-2 py-1 rounded-full bg-red-100">
+                    <Text className="text-xs font-medium text-red-600">NEW</Text>
+                  </View>
+                )}
+              </View>
+              <Text className="text-sm text-muted-foreground">Weekly personalized content prompts</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="gray" />
+          </TouchableOpacity>
+
           <TouchableOpacity 
             className="flex-row items-center rounded-lg border border-border bg-card p-4"
             onPress={() => router.push("/ai-analytics")}

@@ -55,6 +55,13 @@ export default function RootLayout() {
                 gestureEnabled: false 
               }} 
             />
+            <Stack.Screen 
+              name="content-spark" 
+              options={{ 
+                presentation: "card",
+                gestureEnabled: true 
+              }} 
+            />
           </Stack>
         </AuthWrapper>
       </AuthProvider>

@@ -532,3 +532,37 @@ export interface NutritionScanResponse {
   error?: string;
   processingTime?: number;
 }
+
+// Content Sparks types for User Story #2
+export interface ContentSpark {
+  id: string;
+  user_id: string;
+  week_identifier: string;
+  prompts: PromptData[];
+  generation_context: Record<string, any>;
+  viewed_at: string | null;
+  prompts_used: number[];
+  created_at: string;
+  is_new?: boolean; // Computed field
+}
+
+export interface PromptData {
+  title: string;
+  description: string;
+  type: 'photo' | 'video';
+  category: string;
+  difficulty: 'easy' | 'medium' | 'advanced';
+  estimated_time: string;
+}
+
+export interface ContentSparkGenerationRequest {
+  userId?: string;
+  generateForAllUsers?: boolean;
+}
+
+export interface ContentSparkGenerationResponse {
+  success: boolean;
+  sparksGenerated?: number;
+  error?: string;
+  processingTime?: number;
+}
