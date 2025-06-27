@@ -9,7 +9,7 @@ const path = require('path');
 
 // Load environment variables from .env.local
 function loadEnvLocal() {
-  const envPath = path.join(__dirname, '.env.local');
+  const envPath = path.join(__dirname, '../../.env.local');
   if (!fs.existsSync(envPath)) {
     console.error('❌ .env.local file not found in project root');
     return false;
@@ -84,12 +84,11 @@ async function applyDatabaseFix() {
       console.log('❌ Table does not exist, need to create it via Supabase Dashboard');
       console.log('\n🔧 MANUAL STEP REQUIRED:');
       console.log('1. Go to Supabase Dashboard → SQL Editor');
-      console.log('2. Copy and paste this SQL:');
+      console.log('2. Copy and paste the content_sparks table creation SQL from migration:');
+      console.log('   supabase/migrations/20250102000001_content_sparks_system.sql');
       console.log('\n' + '='.repeat(60));
-      
-      const fixSQL = fs.readFileSync('fix_content_sparks_table.sql', 'utf8');
-      console.log(fixSQL);
-      
+      console.log('NOTE: The fix_content_sparks_table.sql file was removed as it is now');
+      console.log('covered by the migration 20250102000001_content_sparks_system.sql');
       console.log('='.repeat(60));
       console.log('\n3. Click "Run" to execute the SQL');
       console.log('4. Then run this script again to verify');

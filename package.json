@@ -17,8 +17,11 @@
     "functions:deploy:content-sparks": "supabase functions deploy generate-weekly-content-sparks",
     "functions:logs": "supabase functions logs",
     "setup:rag": "npm run db:push && npm run functions:deploy",
-    "test:nutrition": "node test_nutrition_scan.js",
-    "test:content-sparks": "node test_content_sparks.js",
+    "test:nutrition": "node tests/integration/test_nutrition_scan.js",
+    "test:content-sparks": "node tests/integration/test_content_sparks.js",
+    "test:database": "node tests/integration/test_database_functions.js",
+    "test:storage": "node tests/integration/test_storage.js",
+    "test:all": "npm run test:nutrition && npm run test:content-sparks && npm run test:database && npm run test:storage",
     "secrets:list": "supabase secrets list"
   },
   "dependencies": {

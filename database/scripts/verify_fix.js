@@ -9,7 +9,7 @@ const path = require('path');
 
 // Load environment variables from .env.local
 function loadEnvLocal() {
-  const envPath = path.join(__dirname, '.env.local');
+  const envPath = path.join(__dirname, '../../.env.local');
   const envContent = fs.readFileSync(envPath, 'utf8');
   const envLines = envContent.split('\n');
   

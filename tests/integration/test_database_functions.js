@@ -9,7 +9,7 @@ const path = require('path');
 
 // Load environment variables from .env.local
 function loadEnvLocal() {
-  const envPath = path.join(__dirname, '.env.local');
+  const envPath = path.join(__dirname, '../../.env.local');
   if (!fs.existsSync(envPath)) {
     console.error('❌ .env.local file not found in project root');
     return false;
