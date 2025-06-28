@@ -137,14 +137,16 @@ function SuccessToast({ visible, onHide }: { visible: boolean; onHide: () => voi
   if (!visible) return null;
 
   return (
-    <View className="absolute top-4 left-4 right-4 z-50">
-      <View className="bg-green-500 px-4 py-3 rounded-lg shadow-lg flex-row items-center">
-        <Ionicons name="checkmark-circle" size={20} color="white" />
-        <Text className="text-white font-medium ml-2">
-          ✨ New content sparks generated!
-        </Text>
+    <SafeAreaView className="absolute top-0 left-0 right-0 z-50 pointer-events-none">
+      <View className="px-4 pt-2">
+        <View className="bg-green-500 px-4 py-3 rounded-lg shadow-lg flex-row items-center">
+          <Ionicons name="checkmark-circle" size={20} color="white" />
+          <Text className="text-white font-medium ml-2">
+            ✨ New content sparks generated!
+          </Text>
+        </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

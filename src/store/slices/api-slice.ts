@@ -195,24 +195,18 @@ export const apiSlice = createApi({
 
         if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
 
-        // Step 2: Delete current week's content sparks for fresh demo
+        // Step 2: Delete ALL content sparks for the user (not just current week)
         try {
-          const { data: weekId, error: weekError } = await supabase
-            .rpc('get_current_week_identifier');
+          const { error: deleteError } = await supabase
+            .from('content_sparks')
+            .delete()
+            .eq('user_id', user.id);
 
-          if (!weekError && weekId) {
-            const { error: deleteError } = await supabase
-              .from('content_sparks')
-              .delete()
-              .eq('user_id', user.id)
-              .eq('week_identifier', weekId);
-
-            if (deleteError) {
-              console.error('⚠️ Error deleting content sparks:', deleteError);
-              // Don't fail the whole operation for this
-            } else {
-              console.log('✅ Content sparks cleared for fresh demo');
-            }
+          if (deleteError) {
+            console.error('⚠️ Error deleting content sparks:', deleteError);
+            // Don't fail the whole operation for this
+          } else {
+            console.log('✅ All content sparks cleared for fresh demo');
           }
         } catch (sparkError) {
           console.error('⚠️ Error clearing content sparks:', sparkError);
@@ -222,7 +216,7 @@ export const apiSlice = createApi({
         console.log('✅ Onboarding reset complete');
         return { data };
       },
-      invalidatesTags: ["Profile", { type: "ContentSpark", id: "CURRENT" }],
+      invalidatesTags: ["Profile", "ContentSpark"],
     }),
 
     // User Statistics endpoints
