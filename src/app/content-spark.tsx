@@ -123,10 +123,36 @@ function PromptCard({ prompt, index, onUsePrompt, isUsed }: PromptCardProps) {
   );
 }
 
+/**
+ * Success toast component for subtle feedback
+ */
+function SuccessToast({ visible, onHide }: { visible: boolean; onHide: () => void }) {
+  useEffect(() => {
+    if (visible) {
+      const timer = setTimeout(onHide, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [visible, onHide]);
+
+  if (!visible) return null;
+
+  return (
+    <View className="absolute top-4 left-4 right-4 z-50">
+      <View className="bg-green-500 px-4 py-3 rounded-lg shadow-lg flex-row items-center">
+        <Ionicons name="checkmark-circle" size={20} color="white" />
+        <Text className="text-white font-medium ml-2">
+          ✨ New content sparks generated!
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export default function ContentSparkScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
 
   // API hooks
   const { 
@@ -135,6 +161,14 @@ export default function ContentSparkScreen() {
     error, 
     refetch 
   } = useGetCurrentContentSparkQuery();
+
+  // Debug logging
+  console.log('🔍 Content Spark Debug:', {
+    contentSpark,
+    isLoading,
+    error,
+    user: user?.id
+  });
   
   const [generateWeeklyContentSparks, { isLoading: isGenerating }] = useGenerateWeeklyContentSparksMutation();
   const [markContentSparkViewed] = useMarkContentSparkViewedMutation();
@@ -162,7 +196,7 @@ export default function ContentSparkScreen() {
   };
 
   /**
-   * Generate new content sparks for testing
+   * Generate new content sparks with immediate feedback
    */
   const handleGenerateNew = async () => {
     if (!user) return;
@@ -180,14 +214,21 @@ export default function ContentSparkScreen() {
                 userId: user.id 
               }).unwrap();
               
+              console.log('✅ Generation result:', result);
+              
               if (result.success) {
-                Alert.alert(
-                  "Success! 🎉",
-                  "New content sparks generated! Pull down to refresh and see your new prompts.",
-                  [{ text: "OK" }]
-                );
-                // Refresh the data
-                refetch();
+                // Force refetch with a small delay to ensure data is written
+                setTimeout(async () => {
+                  console.log('🔄 Force refetching content spark...');
+                  await refetch();
+                  console.log('✅ Refetch completed');
+                }, 1000);
+                
+                // Show subtle success feedback
+                setShowSuccessToast(true);
+              } else {
+                console.error('❌ Generation reported failure:', result.error);
+                throw new Error(result.error || 'Generation failed');
               }
             } catch (error) {
               console.error('Failed to generate content sparks:', error);
@@ -307,7 +348,12 @@ export default function ContentSparkScreen() {
               disabled={isGenerating}
             >
               {isGenerating ? (
-                <ActivityIndicator size="small" color="white" />
+                <View className="flex-row items-center">
+                  <ActivityIndicator size="small" color="white" />
+                  <Text className="font-semibold text-primary-foreground ml-2">
+                    Generating...
+                  </Text>
+                </View>
               ) : (
                 <Text className="font-semibold text-primary-foreground">
                   Generate Content Sparks
@@ -325,6 +371,12 @@ export default function ContentSparkScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background">
+      {/* Success Toast */}
+      <SuccessToast 
+        visible={showSuccessToast} 
+        onHide={() => setShowSuccessToast(false)} 
+      />
+
       {/* Header */}
       <View className="flex-row items-center justify-between px-4 py-4 border-b border-border">
         <TouchableOpacity onPress={handleBack}>
@@ -335,11 +387,11 @@ export default function ContentSparkScreen() {
           <Text className="text-2xl">🔥</Text>
         </View>
         <TouchableOpacity onPress={handleGenerateNew} disabled={isGenerating}>
-          <Ionicons 
-            name="refresh" 
-            size={24} 
-            color={isGenerating ? "#9CA3AF" : "#6B7280"} 
-          />
+          {isGenerating ? (
+            <ActivityIndicator size={24} color="#6B7280" />
+          ) : (
+            <Ionicons name="refresh" size={24} color="#6B7280" />
+          )}
         </TouchableOpacity>
       </View>
 

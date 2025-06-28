@@ -464,27 +464,47 @@ export default function CameraScreen() {
             )}
           </View>
 
+          {/* Scan mode overlay */}
+          {scanMode === 'scan' && (
+            <View style={styles.scanOverlay}>
+              <View style={styles.scanFrameContainer}>
+                <View style={styles.scanFrame} />
+                <View style={styles.scanCorners}>
+                  <View style={[styles.scanCorner, styles.scanCornerTL]} />
+                  <View style={[styles.scanCorner, styles.scanCornerTR]} />
+                  <View style={[styles.scanCorner, styles.scanCornerBL]} />
+                  <View style={[styles.scanCorner, styles.scanCornerBR]} />
+                </View>
+              </View>
+              <Text style={styles.scanHint}>
+                🔍 Tap to scan nutrition info
+              </Text>
+            </View>
+          )}
+
           {/* Instructions */}
-          {!isRecording && (
+          {!isRecording && scanMode !== 'scan' && (
             <View style={styles.instructionsContainer}>
               <Text style={styles.instructionsText}>
-                {scanMode === 'scan' 
-                  ? "Tap to scan nutrition • Hold for video"
-                  : scanMode === 'processing'
-                  ? "Processing image with AI..."
+                {scanMode === 'processing'
+                  ? "🤖 Analyzing with AI..."
                   : "Tap for photo • Hold for video"
                 }
               </Text>
             </View>
           )}
 
-          {/* Scan mode overlay */}
-          {scanMode === 'scan' && (
-            <View style={styles.scanOverlay}>
-              <View style={styles.scanFrame} />
-              <Text style={styles.scanHint}>
-                Point camera at food item or nutrition label
-              </Text>
+          {/* Processing overlay */}
+          {scanMode === 'processing' && (
+            <View style={styles.processingOverlay}>
+              <View style={styles.processingContainer}>
+                <View style={styles.processingSpinner}>
+                  <Ionicons name="nutrition" size={32} color="#22C55E" />
+                </View>
+                <Text style={styles.processingText}>
+                  Scanning nutrition...
+                </Text>
+              </View>
             </View>
           )}
 
@@ -689,28 +709,110 @@ const styles = StyleSheet.create({
   },
   scanOverlay: {
     position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: [{ translateX: -100 }, { translateY: -100 }],
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+  },
+  scanFrameContainer: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scanFrame: {
-    width: 200,
-    height: 200,
+    width: 240,
+    height: 240,
+    borderRadius: 20,
+    backgroundColor: 'transparent',
+  },
+  scanCorners: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  scanCorner: {
+    position: 'absolute',
+    width: 30,
+    height: 30,
     borderColor: '#22C55E',
     borderWidth: 3,
-    borderRadius: 12,
-    backgroundColor: 'transparent',
-    borderStyle: 'dashed',
+  },
+  scanCornerTL: {
+    top: 0,
+    left: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+    borderTopLeftRadius: 20,
+  },
+  scanCornerTR: {
+    top: 0,
+    right: 0,
+    borderLeftWidth: 0,
+    borderBottomWidth: 0,
+    borderTopRightRadius: 20,
+  },
+  scanCornerBL: {
+    bottom: 0,
+    left: 0,
+    borderRightWidth: 0,
+    borderTopWidth: 0,
+    borderBottomLeftRadius: 20,
+  },
+  scanCornerBR: {
+    bottom: 0,
+    right: 0,
+    borderLeftWidth: 0,
+    borderTopWidth: 0,
+    borderBottomRightRadius: 20,
   },
   scanHint: {
-    marginTop: 16,
+    marginTop: 32,
     color: 'white',
-    fontSize: 14,
+    fontSize: 16,
+    fontWeight: '600',
     textAlign: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    backgroundColor: 'rgba(34, 197, 94, 0.9)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    overflow: 'hidden',
+  },
+  processingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+  },
+  processingContainer: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 32,
+    paddingVertical: 24,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
+    elevation: 8,
+  },
+  processingSpinner: {
+    marginBottom: 12,
+  },
+  processingText: {
+    color: '#374151',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

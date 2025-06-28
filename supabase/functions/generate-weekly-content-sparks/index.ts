@@ -36,15 +36,30 @@ serve(async (req) => {
   try {
     console.log('🔵 Starting weekly content spark generation')
     
-    // Initialize Supabase client with service role for admin operations
+    // Initialize Supabase client for user authentication
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       {
         global: {
           headers: { Authorization: req.headers.get('Authorization')! },
         },
       }
+    )
+
+    // Get authenticated user first
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
+    if (authError || !user) {
+      console.error('❌ User authentication failed:', authError)
+      throw new Error('Unauthorized - please sign in again')
+    }
+
+    console.log('✅ User authenticated:', user.id)
+
+    // Initialize service role client for admin operations
+    const serviceClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
     const startTime = Date.now()
@@ -62,8 +77,12 @@ serve(async (req) => {
     let usersToProcess: any[] = []
 
     if (userId) {
-      // Manual generation for specific user
-      const { data: user, error: userError } = await supabaseClient
+      // Manual generation for specific user - validate it matches authenticated user
+      if (userId !== user.id) {
+        throw new Error('Can only generate content sparks for yourself')
+      }
+
+      const { data: userProfile, error: userError } = await serviceClient
         .from('profiles')
         .select(`
           id, email, display_name, content_spark_notifications,
@@ -73,14 +92,14 @@ serve(async (req) => {
         .eq('id', userId)
         .single()
 
-      if (userError || !user) {
-        throw new Error(`User not found: ${userError?.message}`)
+      if (userError || !userProfile) {
+        throw new Error(`User profile not found: ${userError?.message}`)
       }
 
-      usersToProcess = [user]
+      usersToProcess = [userProfile]
     } else if (generateForAllUsers) {
-      // Get all users who need content sparks this week
-      const { data: users, error: usersError } = await supabaseClient
+      // Get all users who need content sparks this week (admin only)
+      const { data: users, error: usersError } = await serviceClient
         .rpc('get_users_needing_content_sparks')
 
       if (usersError) {
@@ -90,7 +109,22 @@ serve(async (req) => {
       usersToProcess = users || []
       console.log(`Found ${usersToProcess.length} users needing content sparks`)
     } else {
-      throw new Error('Must specify userId or generateForAllUsers')
+      // Default: generate for current authenticated user
+      const { data: userProfile, error: userError } = await serviceClient
+        .from('profiles')
+        .select(`
+          id, email, display_name, content_spark_notifications,
+          primary_fitness_goal, dietary_restrictions, preferred_content_style,
+          cooking_skill_level, activity_level, onboarding_completed
+        `)
+        .eq('id', user.id)
+        .single()
+
+      if (userError || !userProfile) {
+        throw new Error(`User profile not found: ${userError?.message}`)
+      }
+
+      usersToProcess = [userProfile]
     }
 
     let sparksGenerated = 0
@@ -101,10 +135,10 @@ serve(async (req) => {
         console.log(`Generating content spark for user: ${user.email}`)
         
         // Generate personalized prompts for this user
-        const prompts = await generatePersonalizedPrompts(supabaseClient, user)
+        const prompts = await generatePersonalizedPrompts(serviceClient, user)
         
         // Get current week identifier
-        const { data: weekId, error: weekError } = await supabaseClient
+        const { data: weekId, error: weekError } = await serviceClient
           .rpc('get_current_week_identifier')
 
         if (weekError || !weekId) {
@@ -112,10 +146,11 @@ serve(async (req) => {
         }
 
         // Store content spark in database
-        const { error: insertError } = await supabaseClient
+        console.log(`🔵 Storing content spark for user ID: ${user.id}`);
+        const { data: insertedData, error: insertError } = await serviceClient
           .from('content_sparks')
           .upsert({
-            user_id: user.user_id || user.id,
+            user_id: user.id, // Use consistent user.id field
             week_identifier: weekId,
             prompts: prompts,
             generation_context: {
@@ -128,11 +163,14 @@ serve(async (req) => {
               model_used: 'gpt-4o-mini'
             }
           })
+          .select()
 
         if (insertError) {
-          console.error(`Failed to store content spark for user ${user.email}:`, insertError)
+          console.error(`❌ Failed to store content spark for user ${user.email}:`, insertError)
           continue
         }
+
+        console.log(`✅ Content spark stored successfully:`, insertedData);
 
         // Send push notification (simplified for now)
         await sendContentSparkNotification(user)
@@ -177,7 +215,7 @@ serve(async (req) => {
 /**
  * Generate 3 personalized content prompts for a user using RAG and preferences
  */
-async function generatePersonalizedPrompts(supabaseClient: any, user: any): Promise<PromptData[]> {
+async function generatePersonalizedPrompts(serviceClient: any, user: any): Promise<PromptData[]> {
   console.log(`🔵 Generating prompts for user with preferences:`, {
     fitness_goal: user.primary_fitness_goal,
     content_style: user.preferred_content_style,
@@ -185,18 +223,18 @@ async function generatePersonalizedPrompts(supabaseClient: any, user: any): Prom
   })
 
   // Get user's recent content for context
-  const { data: recentContent } = await supabaseClient
+  const { data: recentContent } = await serviceClient
     .from('journal_entries')
     .select('caption, tags, content_type, created_at')
-    .eq('user_id', user.user_id || user.id)
+    .eq('user_id', user.id) // Use consistent user.id field
     .order('created_at', { ascending: false })
     .limit(10)
 
   // Get user's AI feedback patterns for personalization
-  const { data: feedbackData } = await supabaseClient
+  const { data: feedbackData } = await serviceClient
     .from('ai_feedback')
     .select('suggestion_type, feedback_type, original_suggestion, context_metadata')
-    .eq('user_id', user.user_id || user.id)
+    .eq('user_id', user.id) // Use consistent user.id field
     .eq('feedback_type', 'thumbs_up')
     .order('created_at', { ascending: false })
     .limit(5)

@@ -6,7 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "scheme": "foodie-snap",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -14,14 +13,23 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.imjeremiah.foodiesnap",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "com.imjeremiah.foodiesnap"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -31,6 +39,9 @@
       "expo-router",
       "expo-video",
       "expo-audio"
-    ]
+    ],
+    "extra": {
+      "router": {}
+    }
   }
 }

@@ -162,9 +162,11 @@ export const apiSlice = createApi({
 
     resetOnboarding: builder.mutation<Profile, void>({
       queryFn: async () => {
+        console.log('🔄 Resetting onboarding and content sparks...');
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
 
+        // Step 1: Reset profile preferences
         const { data, error } = await supabase
           .from("profiles")
           .update({
@@ -192,9 +194,35 @@ export const apiSlice = createApi({
           .single();
 
         if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+
+        // Step 2: Delete current week's content sparks for fresh demo
+        try {
+          const { data: weekId, error: weekError } = await supabase
+            .rpc('get_current_week_identifier');
+
+          if (!weekError && weekId) {
+            const { error: deleteError } = await supabase
+              .from('content_sparks')
+              .delete()
+              .eq('user_id', user.id)
+              .eq('week_identifier', weekId);
+
+            if (deleteError) {
+              console.error('⚠️ Error deleting content sparks:', deleteError);
+              // Don't fail the whole operation for this
+            } else {
+              console.log('✅ Content sparks cleared for fresh demo');
+            }
+          }
+        } catch (sparkError) {
+          console.error('⚠️ Error clearing content sparks:', sparkError);
+          // Continue anyway - don't fail onboarding reset
+        }
+
+        console.log('✅ Onboarding reset complete');
         return { data };
       },
-      invalidatesTags: ["Profile"],
+      invalidatesTags: ["Profile", { type: "ContentSpark", id: "CURRENT" }],
     }),
 
     // User Statistics endpoints
@@ -2788,7 +2816,8 @@ export const apiSlice = createApi({
         console.log('🔵 User and session authenticated, calling Edge Function...');
 
         try {
-          const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/generate-smart-captions`, {
+          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://abtjktcxnqrazyfyzcen.supabase.co';
+          const response = await fetch(`${supabaseUrl}/functions/v1/generate-smart-captions`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
@@ -2844,7 +2873,8 @@ export const apiSlice = createApi({
         }
 
         try {
-          const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/generate-content-embeddings`, {
+          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://abtjktcxnqrazyfyzcen.supabase.co';
+          const response = await fetch(`${supabaseUrl}/functions/v1/generate-content-embeddings`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
@@ -2895,7 +2925,8 @@ export const apiSlice = createApi({
         console.log('🔵 User and session authenticated, calling nutrition scan function...');
 
         try {
-          const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/scan-nutrition-label`, {
+          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://abtjktcxnqrazyfyzcen.supabase.co';
+          const response = await fetch(`${supabaseUrl}/functions/v1/scan-nutrition-label`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
@@ -3095,16 +3126,27 @@ export const apiSlice = createApi({
     // Content Sparks endpoints (User Story #2)
     getCurrentContentSpark: builder.query<ContentSpark | null, void>({
       queryFn: async () => {
+        console.log('🔍 getCurrentContentSpark: Starting query...');
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+        if (!user) {
+          console.log('❌ getCurrentContentSpark: No authenticated user');
+          return { error: { status: "CUSTOM_ERROR", error: "No authenticated user" } };
+        }
 
+        console.log('🔍 getCurrentContentSpark: User ID:', user.id);
         const { data, error } = await supabase
           .rpc('get_current_content_spark', { user_id_param: user.id });
 
-        if (error) return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        if (error) {
+          console.error('❌ getCurrentContentSpark: Database error:', error);
+          return { error: { status: "CUSTOM_ERROR", error: error.message } };
+        }
+        
+        console.log('🔍 getCurrentContentSpark: Raw data returned:', data);
         
         // Return first result if found, otherwise null
         const contentSpark = data && data.length > 0 ? data[0] : null;
+        console.log('🔍 getCurrentContentSpark: Final result:', contentSpark);
         return { data: contentSpark };
       },
       providesTags: [{ type: "ContentSpark", id: "CURRENT" }],
@@ -3131,12 +3173,14 @@ export const apiSlice = createApi({
         console.log('🔵 Calling content spark generation function...');
 
         try {
-          const response = await fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/generate-weekly-content-sparks`, {
+          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://abtjktcxnqrazyfyzcen.supabase.co';
+          console.log('🔍 Using Supabase URL:', supabaseUrl);
+          const response = await fetch(`${supabaseUrl}/functions/v1/generate-weekly-content-sparks`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
               'Content-Type': 'application/json',
-              'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+              'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFidGprdGN4bnFyYXp5Znl6Y2VuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA3MjM1NTMsImV4cCI6MjA2NjI5OTU1M30.3v-gtfPe8A3KyfxuaVmxyXVZUAO-b3UMOqy6-ulgX0Y',
             },
             body: JSON.stringify(request),
           });

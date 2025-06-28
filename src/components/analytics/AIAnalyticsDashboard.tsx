@@ -14,6 +14,7 @@ import {
   Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useGetUserAiFeedbackQuery } from "../../store/slices/api-slice";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -101,6 +102,7 @@ function MetricCard({ metric }: { metric: AnalyticsMetric }) {
  * Main AI Analytics Dashboard component
  */
 export default function AIAnalyticsDashboard() {
+  const router = useRouter();
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
   const [suggestionType, setSuggestionType] = useState<SuggestionType>('all');
   const [refreshing, setRefreshing] = useState(false);
@@ -115,6 +117,17 @@ export default function AIAnalyticsDashboard() {
     suggestion_types: suggestionType === 'all' ? undefined : [suggestionType],
     limit: 1000
   });
+
+  /**
+   * Handle back navigation
+   */
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)/profile');
+    }
+  };
 
   /**
    * Filter data by time range
@@ -219,7 +232,7 @@ export default function AIAnalyticsDashboard() {
     },
     {
       label: 'Suggestions Edited',
-      value: `${analytics.editedRate}%`,
+      value: `${analytics.editedRate || 0}%`,
       icon: 'create',
       color: '#F59E0B',
     },
@@ -263,6 +276,15 @@ export default function AIAnalyticsDashboard() {
   if (error) {
     return (
       <SafeAreaView className="flex-1 bg-background">
+        {/* Header with Back Button */}
+        <View className="flex-row items-center justify-between px-4 py-4 border-b border-border">
+          <TouchableOpacity onPress={handleBack} className="p-2 -ml-2">
+            <Ionicons name="chevron-back" size={24} color="#6B7280" />
+          </TouchableOpacity>
+          <Text className="text-lg font-semibold text-foreground">AI Analytics</Text>
+          <View style={{ width: 24 }} />
+        </View>
+
         <View className="flex-1 items-center justify-center px-4">
           <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
           <Text className="mt-4 text-center text-xl font-semibold text-foreground">
@@ -286,6 +308,15 @@ export default function AIAnalyticsDashboard() {
 
   return (
     <SafeAreaView className="flex-1 bg-background">
+      {/* Header with Back Button */}
+      <View className="flex-row items-center justify-between px-4 py-4 border-b border-border">
+        <TouchableOpacity onPress={handleBack} className="p-2 -ml-2">
+          <Ionicons name="chevron-back" size={24} color="#6B7280" />
+        </TouchableOpacity>
+        <Text className="text-lg font-semibold text-foreground">AI Analytics</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
       <ScrollView
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -293,7 +324,7 @@ export default function AIAnalyticsDashboard() {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View className="px-4 py-6 border-b border-border">
+        <View className="px-4 py-6">
           <Text className="text-2xl font-bold text-foreground mb-2">
             AI Analytics
           </Text>
@@ -413,7 +444,7 @@ export default function AIAnalyticsDashboard() {
                   </Text>
                 </View>
 
-                {analytics.editedRate > 20 && (
+                {(analytics.editedRate || 0) > 20 && (
                   <View className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
                     <View className="flex-row items-center mb-2">
                       <Ionicons name="bulb" size={20} color="#F59E0B" />
