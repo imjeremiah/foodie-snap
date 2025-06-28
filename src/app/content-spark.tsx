@@ -162,7 +162,12 @@ export default function ContentSparkScreen() {
     isLoading, 
     error, 
     refetch 
-  } = useGetCurrentContentSparkQuery();
+  } = useGetCurrentContentSparkQuery(undefined, {
+    // Skip cache for more reliable fresh data after mutations
+    refetchOnMountOrArgChange: 30, // Refetch if query was made more than 30 seconds ago
+    refetchOnFocus: true,
+    refetchOnReconnect: true,
+  });
 
   // Debug logging
   console.log('🔍 Content Spark Debug:', {
@@ -189,12 +194,31 @@ export default function ContentSparkScreen() {
   }, [contentSpark, markContentSparkViewed]);
 
   /**
-   * Handle pull-to-refresh
+   * Handle pull-to-refresh with force refetch
    */
   const onRefresh = async () => {
+    console.log('🔄 Force refreshing content spark...');
     setRefreshing(true);
-    await refetch();
+    try {
+      await refetch();
+      console.log('✅ Content spark refresh completed');
+    } catch (error) {
+      console.error('❌ Content spark refresh failed:', error);
+    }
     setRefreshing(false);
+  };
+
+  /**
+   * Force refresh content spark data (bypasses cache)
+   */
+  const forceRefreshContentSpark = async () => {
+    console.log('🔄 Force refreshing content spark data...');
+    try {
+      await refetch();
+      console.log('✅ Force refresh completed');
+    } catch (error) {
+      console.error('❌ Force refresh failed:', error);
+    }
   };
 
   /**
@@ -388,13 +412,18 @@ export default function ContentSparkScreen() {
           <Text className="text-lg font-semibold text-foreground">Content Spark</Text>
           <Text className="text-2xl">🔥</Text>
         </View>
-        <TouchableOpacity onPress={handleGenerateNew} disabled={isGenerating}>
-          {isGenerating ? (
-            <ActivityIndicator size={24} color="#6B7280" />
-          ) : (
-            <Ionicons name="refresh" size={24} color="#6B7280" />
-          )}
-        </TouchableOpacity>
+        <View className="flex-row items-center space-x-3">
+          <TouchableOpacity onPress={forceRefreshContentSpark}>
+            <Ionicons name="reload" size={24} color="#6B7280" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleGenerateNew} disabled={isGenerating}>
+            {isGenerating ? (
+              <ActivityIndicator size={24} color="#6B7280" />
+            ) : (
+              <Ionicons name="refresh" size={24} color="#6B7280" />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView 
