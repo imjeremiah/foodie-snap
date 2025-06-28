@@ -50,7 +50,7 @@ interface JournalItemProps {
 function JournalItem({ item, onPress, onLongPress }: JournalItemProps) {
   return (
     <TouchableOpacity
-      className="relative bg-muted rounded-lg overflow-hidden"
+      className="relative bg-muted rounded-lg overflow-hidden shadow-sm"
       style={{ width: ITEM_SIZE, height: ITEM_SIZE }}
       onPress={() => onPress(item)}
       onLongPress={() => onLongPress(item)}
@@ -81,10 +81,10 @@ function JournalItem({ item, onPress, onLongPress }: JournalItemProps) {
         )}
       </View>
 
-      {/* Caption preview */}
+      {/* Caption preview with overlay */}
       {item.caption && (
-        <View className="absolute bottom-0 left-0 right-0 bg-black/50 px-2 py-1">
-          <Text className="text-white text-xs" numberOfLines={2}>
+        <View className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-2">
+          <Text className="text-white text-xs font-medium" numberOfLines={2}>
             {item.caption}
           </Text>
         </View>
@@ -339,8 +339,8 @@ export default function JournalScreen() {
     const isActive = activeFilter === filter;
     return `px-4 py-2 rounded-full ${
       isActive 
-        ? 'bg-primary' 
-        : 'bg-muted border border-border'
+        ? 'bg-primary shadow-sm border border-primary' 
+        : 'bg-card border border-border shadow-sm'
     }`;
   };
 
@@ -507,7 +507,7 @@ export default function JournalScreen() {
             { key: 'shared', label: 'Shared' }
           ]}
           keyExtractor={(item) => item.key}
-          contentContainerStyle={{ gap: 8 }}
+          contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
           renderItem={({ item }) => (
             <TouchableOpacity
               className={getFilterButtonStyle(item.key as FilterType)}

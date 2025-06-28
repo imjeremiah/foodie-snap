@@ -11,11 +11,12 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "hsl(var(--primary))",
-        tabBarInactiveTintColor: "hsl(var(--muted-foreground))",
+        tabBarActiveTintColor: "#22C55E", // Green for active state
+        tabBarInactiveTintColor: "#6B7280", // Gray for inactive state
         tabBarStyle: {
-          backgroundColor: "hsl(var(--background))",
-          borderTopColor: "hsl(var(--border))",
+          backgroundColor: "#FFFFFF",
+          borderTopColor: "#E5E7EB",
+          borderTopWidth: 1,
         },
       }}
     >
@@ -23,8 +24,12 @@ export default function TabLayout() {
         name="journal"
         options={{
           title: "Journal",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="book-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons 
+              name={focused ? "book" : "book-outline"} 
+              size={size} 
+              color={color} 
+            />
           ),
         }}
       />
@@ -32,8 +37,12 @@ export default function TabLayout() {
         name="chat"
         options={{
           title: "Chat",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons 
+              name={focused ? "chatbubble" : "chatbubble-outline"} 
+              size={size} 
+              color={color} 
+            />
           ),
         }}
       />
@@ -41,8 +50,12 @@ export default function TabLayout() {
         name="camera"
         options={{
           title: "Camera",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="camera-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons 
+              name={focused ? "camera" : "camera-outline"} 
+              size={size} 
+              color={color} 
+            />
           ),
         }}
       />
@@ -50,8 +63,12 @@ export default function TabLayout() {
         name="spotlight"
         options={{
           title: "Spotlight",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="flash-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons 
+              name={focused ? "flash" : "flash-outline"} 
+              size={size} 
+              color={color} 
+            />
           ),
         }}
       />
@@ -59,8 +76,12 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons 
+              name={focused ? "person" : "person-outline"} 
+              size={size} 
+              color={color} 
+            />
           ),
         }}
       />
