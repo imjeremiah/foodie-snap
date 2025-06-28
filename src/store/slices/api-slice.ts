@@ -2816,13 +2816,22 @@ export const apiSlice = createApi({
         console.log('🔵 User and session authenticated, calling Edge Function...');
 
         try {
-          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://abtjktcxnqrazyfyzcen.supabase.co';
+          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+          if (!supabaseUrl) {
+            throw new Error('EXPO_PUBLIC_SUPABASE_URL environment variable is required');
+          }
+          
+          const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+          if (!anonKey) {
+            throw new Error('EXPO_PUBLIC_SUPABASE_ANON_KEY environment variable is required');
+          }
+          
           const response = await fetch(`${supabaseUrl}/functions/v1/generate-smart-captions`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
               'Content-Type': 'application/json',
-              'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+              'apikey': anonKey,
             },
             body: JSON.stringify(request),
           });
@@ -2873,13 +2882,22 @@ export const apiSlice = createApi({
         }
 
         try {
-          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://abtjktcxnqrazyfyzcen.supabase.co';
+          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+          if (!supabaseUrl) {
+            throw new Error('EXPO_PUBLIC_SUPABASE_URL environment variable is required');
+          }
+          
+          const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+          if (!anonKey) {
+            throw new Error('EXPO_PUBLIC_SUPABASE_ANON_KEY environment variable is required');
+          }
+          
           const response = await fetch(`${supabaseUrl}/functions/v1/generate-content-embeddings`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
               'Content-Type': 'application/json',
-              'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+              'apikey': anonKey,
             },
             body: JSON.stringify(request),
           });
@@ -2925,13 +2943,22 @@ export const apiSlice = createApi({
         console.log('🔵 User and session authenticated, calling nutrition scan function...');
 
         try {
-          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://abtjktcxnqrazyfyzcen.supabase.co';
+          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+          if (!supabaseUrl) {
+            throw new Error('EXPO_PUBLIC_SUPABASE_URL environment variable is required');
+          }
+          
+          const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+          if (!anonKey) {
+            throw new Error('EXPO_PUBLIC_SUPABASE_ANON_KEY environment variable is required');
+          }
+          
           const response = await fetch(`${supabaseUrl}/functions/v1/scan-nutrition-label`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
               'Content-Type': 'application/json',
-              'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
+              'apikey': anonKey,
             },
             body: JSON.stringify(request),
           });
@@ -3173,14 +3200,23 @@ export const apiSlice = createApi({
         console.log('🔵 Calling content spark generation function...');
 
         try {
-          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://abtjktcxnqrazyfyzcen.supabase.co';
+          const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+          if (!supabaseUrl) {
+            throw new Error('EXPO_PUBLIC_SUPABASE_URL environment variable is required');
+          }
+          
+          const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+          if (!anonKey) {
+            throw new Error('EXPO_PUBLIC_SUPABASE_ANON_KEY environment variable is required');
+          }
+          
           console.log('🔍 Using Supabase URL:', supabaseUrl);
           const response = await fetch(`${supabaseUrl}/functions/v1/generate-weekly-content-sparks`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
               'Content-Type': 'application/json',
-              'apikey': process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFidGprdGN4bnFyYXp5Znl6Y2VuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA3MjM1NTMsImV4cCI6MjA2NjI5OTU1M30.3v-gtfPe8A3KyfxuaVmxyXVZUAO-b3UMOqy6-ulgX0Y',
+              'apikey': anonKey,
             },
             body: JSON.stringify(request),
           });
