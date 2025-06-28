@@ -1,5 +1,40 @@
 # FoodieSnap BrainLift
 
+## 📚 Learning & Research
+
+### Key Articles & Insights
+
+**[🌵 Spiky Point of View: Let's Get a Little Controversial](https://www.weskao.com/blog/spiky-point-of-view-lets-get-a-little-controversial)** - Wes Kao
+- **Core Concept**: A spiky point of view is a perspective others can disagree with - it's your unique thesis about topics in your realm of expertise
+- **Key Takeaway**: Don't aim for 100% agreement; share your truth and start conversations that make people rethink assumptions
+- **Application to FoodieSnap**: Our "AI-first vs AI-as-feature" positioning is our spiky POV that differentiates us from generic social apps with bolted-on AI
+
+**Key Elements of Strong Spiky POVs:**
+1. **Debatable** - Others can disagree (not middle-of-the-road consensus)
+2. **Evidence-based** - Rooted in conviction and experience, not contrarian for its own sake  
+3. **Teaching perspective** - Makes audience see problems in new ways ("I hadn't thought of it that way")
+4. **Defensible** - You believe strongly enough to advocate for it
+5. **Conviction-driven** - Requires courage to stand behind beliefs
+
+### Technical Learning & Implementation
+
+**Class 5: Observability w/ LangFuse & LangSmith**
+- **Focus**: Hands-on LangSmith exercise for AI system monitoring and debugging
+- **Application to FoodieSnap**: Essential for tracking AI caption quality, nutrition scan accuracy, and content spark effectiveness
+- **Key Insight**: Observability is critical for RAG systems to understand what's working and iterate on AI performance
+
+**Class 6: RAG Systems** 
+- **Focus**: RAG, Fusion, & Similarity Search Code exercise - practical implementation of retrieval-augmented generation
+- **Application to FoodieSnap**: Direct implementation in our smart captions, content embeddings, and semantic journal search
+- **Key Insight**: Fusion search techniques can improve content discovery beyond basic vector similarity
+
+**Various RAG Presearch/Research Discussions with LLMs**
+- **Focus**: Exploratory conversations about RAG architecture, embedding strategies, and personalization approaches
+- **Application to FoodieSnap**: Informed our pgvector setup, OpenAI integration patterns, and user context retrieval functions
+- **Key Insight**: Pre-research with LLMs accelerates technical decision-making and reveals edge cases early
+
+---
+
 ## 🌵 Our SpikyPOV
 
 **"Most social apps treat AI as a feature. We treat it as a co-pilot."**
