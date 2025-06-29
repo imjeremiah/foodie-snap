@@ -7,7 +7,6 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { hapticError } from '../../lib/haptics';
 
 /**
@@ -252,30 +251,11 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
         component: errorInfo.componentStack?.split('\n')[1]?.trim(),
       };
 
-      // Get existing history
-      const existingHistory = await AsyncStorage.getItem(ERROR_STORAGE_KEYS.ERROR_HISTORY);
-      const history: ErrorHistoryItem[] = existingHistory ? JSON.parse(existingHistory) : [];
-
-      // Add new error and limit to last 50 errors
-      history.unshift(errorItem);
-      const limitedHistory = history.slice(0, 50);
-
-      // Save back to storage
-      await AsyncStorage.setItem(
-        ERROR_STORAGE_KEYS.ERROR_HISTORY, 
-        JSON.stringify(limitedHistory)
-      );
-
-      // Update crash count
-      const crashCount = await this.incrementCrashCount();
+      // Just keep in memory for now (no persistent storage)
+      const history = [errorItem];
+      this.setState({ errorHistory: history });
       
-      // Save last crash timestamp
-      await AsyncStorage.setItem(
-        ERROR_STORAGE_KEYS.LAST_CRASH,
-        Date.now().toString()
-      );
-
-      this.setState({ errorHistory: limitedHistory });
+      console.log('Error logged:', errorItem);
     } catch (historyError) {
       console.error('Failed to log error to history:', historyError);
     }
@@ -286,10 +266,8 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
    */
   private async incrementCrashCount(): Promise<number> {
     try {
-      const existingCount = await AsyncStorage.getItem(ERROR_STORAGE_KEYS.CRASH_COUNT);
-      const count = existingCount ? parseInt(existingCount, 10) + 1 : 1;
-      await AsyncStorage.setItem(ERROR_STORAGE_KEYS.CRASH_COUNT, count.toString());
-      return count;
+      // Just return 1 for now (no persistent storage)
+      return 1;
     } catch (error) {
       console.error('Failed to increment crash count:', error);
       return 0;
@@ -382,10 +360,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
           style: "destructive",
           onPress: async () => {
             try {
-              // Clear all app storage (be careful with this!)
-              await AsyncStorage.clear();
-              
-              // Reset error boundary state
+              // Just reset error boundary state (no storage clearing)
               this.setState({
                 hasError: false,
                 error: null,
@@ -395,7 +370,7 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
                 errorHistory: [],
               });
               
-              Alert.alert("App Reset", "The app has been reset. Please restart the app.");
+              Alert.alert("App Reset", "The error boundary has been reset.");
             } catch (resetError) {
               console.error('Failed to reset app:', resetError);
               Alert.alert("Reset Failed", "Unable to reset the app. Please restart manually.");

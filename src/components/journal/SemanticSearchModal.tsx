@@ -13,7 +13,7 @@ import {
   Modal,
   ActivityIndicator,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useSearchJournalEntriesSemanticQuery } from "../../store/slices/api-slice";
 
@@ -182,6 +182,15 @@ export default function SemanticSearchModal({ visible, onClose, onResultsFound }
 
   const [isSearching, setIsSearching] = useState(false);
 
+  // Get safe area insets with fallback
+  let insets;
+  try {
+    insets = useSafeAreaInsets();
+  } catch (error) {
+    // Fallback insets if context is not available
+    insets = { top: 44, bottom: 34, left: 0, right: 0 };
+  }
+
   // Skip API call if no filters are set
   const hasFilters = searchFilters.query_text.trim() || 
                     searchFilters.meal_types.length > 0 ||
@@ -281,7 +290,10 @@ export default function SemanticSearchModal({ visible, onClose, onResultsFound }
       onRequestClose={onClose}
     >
       <View className="flex-1 bg-black/20">
-        <SafeAreaView className="flex-1 bg-background mx-2 mt-8 rounded-t-xl shadow-lg">
+        <View 
+          className="flex-1 bg-background mx-2 mt-8 rounded-t-xl shadow-lg"
+          style={{ paddingTop: insets.top }}
+        >
         {/* Header */}
         <View className="flex-row items-center justify-between p-4 border-b border-border">
           <View className="flex-row items-center">
@@ -400,12 +412,12 @@ export default function SemanticSearchModal({ visible, onClose, onResultsFound }
           
           {hasFilters && (
             <Text className="text-xs text-muted-foreground text-center mt-2">
-              Smart search will find meals matching your criteria
-            </Text>
-          )}
-        </View>
-        </SafeAreaView>
+                          Smart search will find meals matching your criteria
+          </Text>
+        )}
       </View>
-    </Modal>
-  );
+      </View>
+    </View>
+  </Modal>
+);
 } 

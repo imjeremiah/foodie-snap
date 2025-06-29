@@ -7,64 +7,67 @@ import "../global.css";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { Provider } from "react-redux";
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { store } from "../store";
 import { AuthProvider } from "../contexts/AuthContext";
 import AuthWrapper from "../components/auth/AuthWrapper";
 
 export default function RootLayout() {
   return (
-    <Provider store={store}>
-      <AuthProvider>
-        <StatusBar style="auto" />
-        <AuthWrapper>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen 
-              name="preview" 
-              options={{ 
-                presentation: "modal",
-                gestureEnabled: true 
-              }} 
-            />
-            <Stack.Screen 
-              name="chat/[id]" 
-              options={{ 
-                presentation: "card",
-                gestureEnabled: true 
-              }} 
-            />
-            <Stack.Screen 
-              name="edit-profile" 
-              options={{ 
-                presentation: "modal",
-                gestureEnabled: true 
-              }} 
-            />
-            <Stack.Screen 
-              name="privacy-settings" 
-              options={{ 
-                presentation: "card",
-                gestureEnabled: true 
-              }} 
-            />
-            <Stack.Screen 
-              name="onboarding" 
-              options={{ 
-                presentation: "fullScreenModal",
-                gestureEnabled: false 
-              }} 
-            />
-            <Stack.Screen 
-              name="content-spark" 
-              options={{ 
-                presentation: "card",
-                gestureEnabled: true 
-              }} 
-            />
-          </Stack>
-        </AuthWrapper>
-      </AuthProvider>
-    </Provider>
+    <SafeAreaProvider>
+      <Provider store={store}>
+        <AuthProvider>
+          <StatusBar style="auto" />
+          <AuthWrapper>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="index" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen 
+                name="preview" 
+                options={{ 
+                  presentation: "modal",
+                  gestureEnabled: true 
+                }} 
+              />
+              <Stack.Screen 
+                name="chat/[id]" 
+                options={{ 
+                  presentation: "card",
+                  gestureEnabled: true 
+                }} 
+              />
+              <Stack.Screen 
+                name="edit-profile" 
+                options={{ 
+                  presentation: "modal",
+                  gestureEnabled: true 
+                }} 
+              />
+              <Stack.Screen 
+                name="privacy-settings" 
+                options={{ 
+                  presentation: "card",
+                  gestureEnabled: true 
+                }} 
+              />
+              <Stack.Screen 
+                name="onboarding" 
+                options={{ 
+                  presentation: "fullScreenModal",
+                  gestureEnabled: false 
+                }} 
+              />
+              <Stack.Screen 
+                name="content-spark" 
+                options={{ 
+                  presentation: "card",
+                  gestureEnabled: true 
+                }} 
+              />
+            </Stack>
+          </AuthWrapper>
+        </AuthProvider>
+      </Provider>
+    </SafeAreaProvider>
   );
 }
