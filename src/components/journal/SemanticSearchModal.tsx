@@ -280,7 +280,8 @@ export default function SemanticSearchModal({ visible, onClose, onResultsFound }
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <SafeAreaView className="flex-1 bg-background">
+      <View className="flex-1 bg-black/20">
+        <SafeAreaView className="flex-1 bg-background mx-2 mt-8 rounded-t-xl shadow-lg">
         {/* Header */}
         <View className="flex-row items-center justify-between p-4 border-b border-border">
           <View className="flex-row items-center">
@@ -370,9 +371,9 @@ export default function SemanticSearchModal({ visible, onClose, onResultsFound }
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              className={`flex-1 rounded-lg px-4 py-3 ${
+              className={`flex-1 rounded-lg px-6 py-4 flex-row items-center justify-center space-x-2 ${
                 hasFilters && !isSearching
-                  ? 'bg-primary'
+                  ? 'bg-primary shadow-sm'
                   : 'bg-muted'
               }`}
               onPress={performSearch}
@@ -381,11 +382,18 @@ export default function SemanticSearchModal({ visible, onClose, onResultsFound }
               {isSearching ? (
                 <ActivityIndicator size="small" color="white" />
               ) : (
-                <Text className={`font-medium text-center ${
-                  hasFilters ? 'text-primary-foreground' : 'text-muted-foreground'
-                }`}>
-                  Search Journal
-                </Text>
+                <>
+                  <Ionicons 
+                    name="search" 
+                    size={18} 
+                    color={hasFilters ? "white" : "#6B7280"} 
+                  />
+                  <Text className={`font-semibold text-center ${
+                    hasFilters ? 'text-primary-foreground' : 'text-muted-foreground'
+                  }`}>
+                    Search Journal
+                  </Text>
+                </>
               )}
             </TouchableOpacity>
           </View>
@@ -396,7 +404,8 @@ export default function SemanticSearchModal({ visible, onClose, onResultsFound }
             </Text>
           )}
         </View>
-      </SafeAreaView>
+        </SafeAreaView>
+      </View>
     </Modal>
   );
 } 

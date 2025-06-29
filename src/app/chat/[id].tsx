@@ -322,12 +322,12 @@ export default function ChatThreadScreen() {
         <View className={`max-w-[80%] ${isMe ? "items-end" : "items-start"}`}>
           {/* Message bubble */}
           <TouchableOpacity
-            className={`rounded-2xl ${
-              isImage ? "overflow-hidden p-0" : "px-4 py-3"
+            className={`rounded-2xl shadow-sm ${
+              isImage ? "overflow-hidden p-0" : "px-5 py-4"
             } ${
               isMe
                 ? `rounded-br-md ${isSnap ? 'bg-purple-500' : 'bg-primary'}`
-                : `rounded-bl-md ${isSnap ? 'bg-purple-100' : 'bg-muted'}`
+                : `rounded-bl-md ${isSnap ? 'bg-purple-100' : 'bg-card border border-border'}`
             }`}
             onPress={() => isSnap ? handleSnapTap(message) : undefined}
             disabled={!isSnap}
@@ -363,15 +363,15 @@ export default function ChatThreadScreen() {
           </TouchableOpacity>
           
           {/* Timestamp and read status */}
-          <View className="mt-1 flex-row items-center space-x-1">
-            <Text className="text-xs text-muted-foreground">
+          <View className="mt-2 flex-row items-center space-x-1">
+            <Text className="text-xs text-muted-foreground opacity-70">
               {formatTime(message.created_at)}
             </Text>
             {isMe && isRead && (
               <Ionicons name="checkmark-done" size={12} color="#10b981" />
             )}
             {isMe && !isRead && (
-              <Ionicons name="checkmark" size={12} color="gray" />
+              <Ionicons name="checkmark" size={12} color="#9CA3AF" />
             )}
           </View>
         </View>

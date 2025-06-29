@@ -130,7 +130,7 @@ interface OptionItemProps {
 function OptionItem({ option, selected, onToggle, multiSelect = false }: OptionItemProps) {
   return (
     <TouchableOpacity
-      className={`p-4 rounded-lg border-2 mb-3 ${
+      className={`p-5 rounded-lg border-2 mb-4 shadow-sm ${
         selected 
           ? "border-primary bg-primary/10" 
           : "border-border bg-card"
@@ -339,7 +339,7 @@ export default function OnboardingScreen() {
       description: "Choose your primary fitness objective to get tailored content suggestions",
       content: (
         <ScrollView showsVerticalScrollIndicator={false}>
-          <View className="space-y-3">
+          <View className="space-y-4">
             {FITNESS_GOALS.map((goal) => (
               <OptionItem
                 key={goal.value}
@@ -360,7 +360,7 @@ export default function OnboardingScreen() {
       description: "Help us understand your dietary needs and restrictions",
       content: (
         <ScrollView showsVerticalScrollIndicator={false}>
-          <View className="space-y-3">
+          <View className="space-y-4">
             {DIETARY_RESTRICTIONS.map((restriction) => (
               <OptionItem
                 key={restriction.value}
@@ -382,7 +382,7 @@ export default function OnboardingScreen() {
       description: "Let us know about any food allergies for safe nutrition advice",
       content: (
         <ScrollView showsVerticalScrollIndicator={false}>
-          <View className="space-y-3">
+          <View className="space-y-4">
             {COMMON_ALLERGIES.map((allergy) => (
               <OptionItem
                 key={allergy.value}
@@ -404,7 +404,7 @@ export default function OnboardingScreen() {
       description: "How would you like your AI-generated captions and suggestions to sound?",
       content: (
         <ScrollView showsVerticalScrollIndicator={false}>
-          <View className="space-y-3">
+          <View className="space-y-4">
             {CONTENT_STYLES.map((style) => (
               <OptionItem
                 key={style.value}
@@ -430,7 +430,7 @@ export default function OnboardingScreen() {
               <Text className="text-lg font-semibold text-foreground mb-4">
                 Activity Level
               </Text>
-              <View className="space-y-3">
+              <View className="space-y-4">
                 {ACTIVITY_LEVELS.map((level) => (
                   <OptionItem
                     key={level.value}
@@ -446,7 +446,7 @@ export default function OnboardingScreen() {
               <Text className="text-lg font-semibold text-foreground mb-4">
                 Cooking Skill Level
               </Text>
-              <View className="space-y-3">
+              <View className="space-y-4">
                 {COOKING_SKILL_LEVELS.map((skill) => (
                   <OptionItem
                     key={skill.value}

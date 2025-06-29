@@ -46,16 +46,16 @@ function ProgressBar({ label, value, total, color }: ProgressBarProps) {
   const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
   
   return (
-    <View className="mb-4">
+    <View className="mb-6">
       <View className="flex-row justify-between items-center mb-2">
         <Text className="text-sm font-medium text-foreground">{label}</Text>
         <Text className="text-sm text-muted-foreground">
           {value} / {total} ({percentage}%)
         </Text>
       </View>
-      <View className="h-2 bg-muted rounded-full">
+      <View className="h-3 bg-muted rounded-full">
         <View
-          className="h-2 rounded-full"
+          className="h-3 rounded-full"
           style={{
             width: `${percentage}%`,
             backgroundColor: color,
@@ -71,7 +71,7 @@ function ProgressBar({ label, value, total, color }: ProgressBarProps) {
  */
 function MetricCard({ metric }: { metric: AnalyticsMetric }) {
   return (
-    <View className="bg-card rounded-lg p-4 border border-border flex-1">
+    <View className="bg-card rounded-lg p-4 border border-border shadow-sm flex-1">
       <View className="flex-row items-center justify-between mb-2">
         <Ionicons name={metric.icon as any} size={24} color={metric.color} />
         {metric.change && (
@@ -376,11 +376,11 @@ export default function AIAnalyticsDashboard() {
             </View>
 
             {/* Performance by Type */}
-            <View className="px-4 mb-6">
-              <Text className="text-lg font-semibold text-foreground mb-4">
+            <View className="px-4 mb-8">
+              <Text className="text-lg font-semibold text-foreground mb-6">
                 Performance by Suggestion Type
               </Text>
-              <View className="bg-card rounded-lg p-4 border border-border">
+              <View className="bg-card rounded-lg p-6 border border-border shadow-sm">
                 {Object.entries(analytics.byType).map(([type, data]) => {
                   const successRate = data.total > 0 ? (data.positive / data.total) * 100 : 0;
                   const color = successRate >= 70 ? '#22C55E' : successRate >= 50 ? '#F59E0B' : '#EF4444';

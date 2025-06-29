@@ -519,7 +519,7 @@ export default function CameraScreen() {
               >
                 <Ionicons 
                   name={scanMode === 'scan' ? "scan" : "nutrition"} 
-                  size={24} 
+                  size={26} 
                   color={scanMode === 'scan' ? "#22C55E" : "white"} 
                 />
               </TouchableOpacity>
@@ -649,11 +649,20 @@ const styles = StyleSheet.create({
   instructionsText: {
     color: 'white',
     fontSize: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    fontWeight: '600',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
     textAlign: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   bottomControls: {
     paddingBottom: 32,
@@ -665,12 +674,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   flipButton: {
-    height: 48,
-    width: 48,
+    height: 52,
+    width: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 24,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 26,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   captureContainer: {
     flex: 1,
@@ -703,9 +720,17 @@ const styles = StyleSheet.create({
     height: 24,
   },
   scanButtonActive: {
-    backgroundColor: 'rgba(34, 197, 94, 0.2)',
+    backgroundColor: 'rgba(34, 197, 94, 0.3)',
     borderColor: '#22C55E',
     borderWidth: 2,
+    shadowColor: '#22C55E',
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 8,
   },
   scanOverlay: {
     position: 'absolute',

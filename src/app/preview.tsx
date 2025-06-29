@@ -611,14 +611,14 @@ ${nutritionCard.recipeIdeas.map((recipe, i) => `${i + 1}. ${recipe}`).join('\n')
         <View className="absolute top-20 right-4 space-y-3">
           {/* AI Caption button */}
           <TouchableOpacity
-            className="h-12 w-12 items-center justify-center rounded-full bg-purple-500"
+            className="h-14 w-14 items-center justify-center rounded-full bg-purple-500 shadow-lg border-2 border-white/20"
             onPress={handleGenerateAiCaptions}
             disabled={isGeneratingCaptions}
           >
             {isGeneratingCaptions ? (
               <ActivityIndicator size="small" color="white" />
             ) : (
-              <Ionicons name="sparkles" size={20} color="white" />
+              <Ionicons name="sparkles" size={24} color="white" />
             )}
           </TouchableOpacity>
           
@@ -936,14 +936,14 @@ ${nutritionCard.recipeIdeas.map((recipe, i) => `${i + 1}. ${recipe}`).join('\n')
                       }}
                       showExplainer={true}
                       style="prominent"
-                      size="small"
+                      size="medium"
                     />
                     
                     <TouchableOpacity
-                      className="rounded-full bg-primary px-4 py-2"
+                      className="rounded-lg bg-primary px-6 py-3 shadow-sm"
                       onPress={() => handleCaptionSelect(caption, index)}
                     >
-                      <Text className="text-sm font-medium text-primary-foreground">
+                      <Text className="text-base font-semibold text-primary-foreground">
                         Use This
                       </Text>
                     </TouchableOpacity>

@@ -38,10 +38,10 @@ interface PromptCardProps {
 function PromptCard({ prompt, index, onUsePrompt, isUsed }: PromptCardProps) {
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
-      case 'easy': return 'text-green-600 bg-green-100';
-      case 'medium': return 'text-yellow-600 bg-yellow-100';
-      case 'advanced': return 'text-red-600 bg-red-100';
-      default: return 'text-gray-600 bg-gray-100';
+      case 'easy': return 'text-green-700 bg-green-200 border-green-300';
+      case 'medium': return 'text-orange-700 bg-orange-200 border-orange-300';
+      case 'advanced': return 'text-red-700 bg-red-200 border-red-300';
+      default: return 'text-gray-700 bg-gray-200 border-gray-300';
     }
   };
 
@@ -63,7 +63,7 @@ function PromptCard({ prompt, index, onUsePrompt, isUsed }: PromptCardProps) {
   };
 
   return (
-    <View className={`p-4 rounded-lg border-2 mb-4 ${
+    <View className={`p-4 rounded-lg border-2 mb-4 shadow-sm ${
       isUsed 
         ? 'border-green-300 bg-green-50' 
         : 'border-border bg-card'
@@ -72,8 +72,8 @@ function PromptCard({ prompt, index, onUsePrompt, isUsed }: PromptCardProps) {
       <View className="flex-row items-center justify-between mb-3">
         <View className="flex-row items-center space-x-2">
           <Text className="text-2xl">{getCategoryEmoji(prompt.category)}</Text>
-          <View className={`px-2 py-1 rounded-full ${getDifficultyColor(prompt.difficulty)}`}>
-            <Text className="text-xs font-medium capitalize">
+          <View className={`px-3 py-1.5 rounded-full border ${getDifficultyColor(prompt.difficulty)}`}>
+            <Text className="text-xs font-semibold capitalize">
               {prompt.difficulty}
             </Text>
           </View>

@@ -346,6 +346,104 @@ export function SkeletonList({
 }
 
 /**
+ * Analytics dashboard skeleton
+ */
+export function AnalyticsDashboardSkeleton() {
+  return (
+    <View className="flex-1 bg-background p-4">
+      {/* Metric cards */}
+      <View className="flex-row space-x-3 mb-6">
+        <View className="flex-1 bg-card rounded-lg p-4 border border-border shadow-sm">
+          <View className="flex-row items-center justify-between mb-2">
+            <Skeleton width={24} height={24} borderRadius={12} />
+            <Skeleton width={40} height={16} />
+          </View>
+          <Skeleton width={60} height={24} style={{ marginBottom: 4 }} />
+          <Skeleton width={80} height={12} />
+        </View>
+        
+        <View className="flex-1 bg-card rounded-lg p-4 border border-border shadow-sm">
+          <View className="flex-row items-center justify-between mb-2">
+            <Skeleton width={24} height={24} borderRadius={12} />
+            <Skeleton width={40} height={16} />
+          </View>
+          <Skeleton width={60} height={24} style={{ marginBottom: 4 }} />
+          <Skeleton width={80} height={12} />
+        </View>
+      </View>
+      
+      {/* Performance section */}
+      <View className="bg-card rounded-lg p-6 border border-border shadow-sm">
+        <Skeleton width={200} height={20} style={{ marginBottom: 24 }} />
+        
+        {/* Progress bars */}
+        {Array.from({ length: 4 }, (_, i) => (
+          <View key={i} className="mb-6">
+            <View className="flex-row justify-between items-center mb-2">
+              <Skeleton width={100} height={14} />
+              <Skeleton width={40} height={14} />
+            </View>
+            <Skeleton width="100%" height={12} borderRadius={6} />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * AI Processing indicator with enhanced messaging
+ */
+interface AIProcessingSkeletonProps {
+  message?: string;
+  subMessage?: string;
+}
+
+export function AIProcessingSkeleton({ 
+  message = "🤖 AI is thinking...",
+  subMessage = "This may take a few moments"
+}: AIProcessingSkeletonProps) {
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const pulse = () => {
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]).start(() => pulse());
+    };
+
+    pulse();
+  }, [pulseAnim]);
+
+  const scale = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.1],
+  });
+
+  return (
+    <View className="items-center justify-center p-8">
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <View className="w-16 h-16 bg-primary/20 rounded-full items-center justify-center mb-4">
+          <Skeleton width={32} height={32} borderRadius={16} />
+        </View>
+      </Animated.View>
+      
+      <Skeleton width={200} height={16} style={{ marginBottom: 8 }} />
+      <Skeleton width={160} height={12} />
+    </View>
+  );
+}
+
+/**
  * Full page skeleton for initial app loading
  */
 export function AppLoadingSkeleton() {
